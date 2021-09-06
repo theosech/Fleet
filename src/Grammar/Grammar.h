@@ -533,7 +533,7 @@ public:
 	}
 	
 
-	Node generate(const nonterminal_t nt=nt<output_t>(), unsigned long depth=0) const {
+	Node generate(nonterminal_t nonterminal=NULL, unsigned long depth=0) const {
 		/**
 		 * @brief Sample an entire tree from this grammar (keeping track of depth in case we recurse too far) of return type nt. This samples a rule, makes them with makeNode, and then recurses. 
 		 * @param nt
@@ -543,6 +543,10 @@ public:
 		 * NOTE: this may throw a if the grammar recurses too far (usually that means the grammar is improper)
 		 */
 		
+		if (nonterminal == NULL) {
+			nonterminal = nt<output_t>();
+		}
+
 		
 		if(depth >= GRAMMAR_MAX_DEPTH) {
 			CERR "*** Grammar exceeded max depth, are you sure the grammar probabilities are right?" ENDL;
@@ -552,7 +556,7 @@ public:
 			throw DepthException();
 		}
 		
-		Rule* r = sample_rule(nt);
+		Rule* r = sample_rule(nonterminal);
 		Node n = makeNode(r);
 		
 		// we'll wrap in a catch so we can see the sequence of nonterminals that failed us:
@@ -563,7 +567,7 @@ public:
 			}
 			
 		} catch(const DepthException& e) { 
-			CERR nt << " ";
+			CERR nonterminal << " ";
 			throw e;
 		}
 		

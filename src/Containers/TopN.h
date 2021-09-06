@@ -203,7 +203,7 @@ public:
 		 * @return 
 		 */
 		
-		assert( (!s.empty()) && "You tried to get the max from a TopN that was empty");
+		// assert( (!s.empty()) && "You tried to get the max from a TopN that was empty");
 		return *s.rbegin();  
 	}
 	const T& worst() const { 

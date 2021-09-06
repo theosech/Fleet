@@ -119,7 +119,7 @@ namespace Proposals {
 		
 		// the old value of s, copied -- needed for fb and for replacement
 		Node old_s = *s; 
-		std::function can_resample_matches_s_nt = [=](const Node& n) -> double { 
+		std::function can_resample_matches_s_nt = [s = s] (const Node& n) -> double { 
 			return can_resample(n)*(n.nt() == s->nt()); 
 		};
 		
@@ -186,7 +186,7 @@ namespace Proposals {
 		auto [s, slp] = sample<Node,Node>(ret, can_resample); // s is a ptr to ret
 		Node old_s = *s; // the old value of s, copied -- needed for fb
 
-		std::function can_resample_matches_s_nt = [&](const Node& n) -> double { 
+		std::function can_resample_matches_s_nt = [s = s] (const Node& n) -> double { 
 			return can_resample(n)*(n.nt() == s->nt()); 
 		};
 		

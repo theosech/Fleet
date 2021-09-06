@@ -386,6 +386,8 @@ public:
 		app.add_option("--inner-restart",  FleetArgs::inner_restart, "Inner restart");
 		app.add_option("--inner-time",  FleetArgs::inner_timestring, "Inner time");
 		app.add_option("--tree",        FleetArgs::tree_path, "Write the tree here");
+
+		app.add_option("--propsim_ll", FleetArgs::propsim_ll, "Use propsim score as the program likelihood");
 		
 //		app.add_flag(  "-q,--quiet",    quiet, "Don't print very much and do so on one line");
 //		app.add_flag(  "-C,--checkpoint",   checkpoint, "Checkpoint every this many steps");
@@ -470,6 +472,7 @@ public:
 			COUT "# \t --time=" << FleetArgs::timestring << " (" << FleetArgs::runtime << " ms)" ENDL;
 			COUT "# \t --restart=" << FleetArgs::restart ENDL;
 			COUT "# \t --seed=" << random_seed ENDL;
+			COUT "# \t --propsim_ll=" << FleetArgs::propsim_ll ENDL;
 			COUT "# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" ENDL;	
 			
 		}
