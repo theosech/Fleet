@@ -89,7 +89,7 @@ public:
 			// defaultly a sum over datums in data (e.g. assuming independence)
 			likelihood = 0.0;
 			for(const auto& d : data) {
-				
+				COUT "(Bayesable::compute_likelihood) iterating data" ENDL;
 				likelihood += compute_single_likelihood(d);
 				
 				if(likelihood == -infinity or std::isnan(likelihood)) break; // no need to continue

@@ -1,6 +1,6 @@
 #pragma once 
 
-//#define PARALLEL_TEMPERING_SHOW_DETAIL
+#define PARALLEL_TEMPERING_SHOW_DETAIL
 
 #include <signal.h>
 #include <functional>

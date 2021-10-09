@@ -2,7 +2,7 @@
 
 #include <thread>
 
-//#define DEBUG_CHAINPOOL
+#define DEBUG_CHAINPOOL
 
 #include <vector>
 
@@ -84,9 +84,9 @@ public:
 			
 			auto& chain = pool[idx];
 			
-			//#ifdef DEBUG_CHAINPOOL
-			//			COUT "# Running thread " <<std::this_thread::get_id() << " on "<< idx TAB chain.current.posterior TAB chain.current.string() ENDL;
-			//#endif
+			#ifdef DEBUG_CHAINPOOL
+						COUT "# Running thread " <<std::this_thread::get_id() << " on "<< idx TAB chain.current.posterior TAB chain.current.string() ENDL;
+			#endif
 
 			// we need to store how many samples we did 
 			// so we can keep track of our total number

@@ -411,6 +411,8 @@ public:
 	 * @return 
 	 */		
 	virtual double compute_likelihood(const data_t& human_data, const double breakout=-infinity) override {
+
+		COUT "(GrammarHypothesis::compute_likelihood) calling compute_likelihood" ENDL;
 		
 		// recompute our likelihood if its the wrong size or not using this data
 		if(which_data != std::addressof(human_data)) { 
