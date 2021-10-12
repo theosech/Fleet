@@ -125,18 +125,65 @@ public:
 	size_t found_trial = 0;
 	size_t found_run = 0;
 
-	const static int NUM_PROPERTIES = 5;
+	const static int NUM_PROPERTIES = 8;
 	Property<MyHypothesis::input_t, MyHypothesis::output_t, bool> properties[NUM_PROPERTIES] = {
 		{"output_els_in_input", [](MyHypothesis::input_t i, MyHypothesis::output_t o) -> bool {
-		 return i.length() == o.length();}},
+			for (const auto x : o) {
+				bool found = (std::find(i.begin(), i.end(), x) != i.end());
+				if (not found) {
+					return false;
+				} 
+			}
+			return true ;
+		}},
 		{"input_els_in_input", [](MyHypothesis::input_t i, MyHypothesis::output_t o) -> bool {
-		 return i.length() == o.length();}},
+			for (const auto x : i) {
+				bool found = (std::find(o.begin(), o.end(), x) != o.end());
+				if (not found) {
+					return false;
+				} 
+			}
+			return true;
+		}},
 		{"output_same_length_as_input", [](MyHypothesis::input_t i, MyHypothesis::output_t o) -> bool {
 		 return i.length() == o.length();}},
 		{"output_shorter_than_input", [](MyHypothesis::input_t i, MyHypothesis::output_t o) -> bool {
 			return i.length() > o.length();}},
 		{"output_longer_than_input", [](MyHypothesis::input_t i, MyHypothesis::output_t o) -> bool {
-			return i.length() < o.length();}}
+			return i.length() < o.length();}},
+		{"every_output_el_gt_every_input_same_idx_el", [](MyHypothesis::input_t i, MyHypothesis::output_t o) -> bool {
+			const int min_size = std::min(o.size(), i.size());
+			for (int j = 0; j < min_size; j++) {
+				if (o[j] <= i[j]) {
+					return false;
+				}
+			}
+			return true;
+		;}},
+		{"input_prefix_of_output", [](MyHypothesis::input_t i, MyHypothesis::output_t o) -> bool {
+			if (i.size() > o.size()) {
+				return false;
+			} else {
+				for (long j = 0; j < i.size(); j++) {
+					if (o[j] != i[j]) {
+						return false;
+					}
+				}
+				return true;
+			}
+		;}},
+		{"input_suffix_of_output", [](MyHypothesis::input_t i, MyHypothesis::output_t o) -> bool {
+			if (i.size() > o.size()) {
+				return false;
+			} else {
+				for (long j = 1; j <= i.size(); j++) {
+					if (o[o.size() - j] != i[i.size() - j]) {
+						return false;
+					}
+				}
+				return true;
+			}
+		;}}
 	};
 	
 	double compute_single_likelihood(const datum_t& x) override {
