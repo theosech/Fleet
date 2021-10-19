@@ -66,7 +66,7 @@ int main(int argc, char** argv){
 	// initial hypothesis
 	MyHypothesis h0;
 
-	for (auto p : h0.properties) {
+	for (auto& p : h0.properties) {
 		bool property_value_ex = p.apply(datum.input, datum.output);
 		COUT p.name TAB property_value_ex ENDL;
 	}

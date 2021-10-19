@@ -20,7 +20,7 @@ public:
 		COUT "name: " << name ENDL;
 	}
 
-	prop_output_t apply(const input_t& i, const output_t& o) {
+	prop_output_t apply(const input_t& i, const output_t& o) const {
 		return fn(i, o);
 	}	
 };

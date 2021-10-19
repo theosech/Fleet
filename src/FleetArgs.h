@@ -38,5 +38,5 @@ namespace FleetArgs {
 	std::string   tree_path    = "tree.txt";
 	std::string   output_path  = "output";
 
-	std::string propsim_ll = "false";
+	int propsim_ll = 0;
 }
