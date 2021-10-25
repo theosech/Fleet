@@ -479,14 +479,14 @@ int main(int argc, char** argv) {
 			else            h0 = top.best();
 			
 			// Run parallel tempering
-			ParallelTempering samp(h0, &training_set, FleetArgs::nchains, 1.0+trial); // adjust temperature by number of data points
-			// MCMCChain samp(h0, &training_set);
-			// samp.temperature = 1000.0;
+			// ParallelTempering samp(h0, &training_set, FleetArgs::nchains, 1.0+trial); // adjust temperature by number of data points
+			MCMCChain samp(h0, &training_set);
+			samp.temperature = 1000.0;
 			
 			auto tempControl = Control();
-			for(auto& h : samp.run(tempControl, 200, 5000)) {
+			// for(auto& h : samp.run(tempControl, 200, 5000)) {
 				// COUT "Number of properties for h: " << h.properties.size() ENDL;
-			// for(auto& h : samp.run(Control())) {			
+			for(auto& h : samp.run(Control())) {			
 				// these only get set on callback
 				h.born_time = time_since(START_TIME);
 				h.born_n = total_nsamples++;
