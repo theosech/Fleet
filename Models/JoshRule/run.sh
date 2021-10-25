@@ -3,12 +3,26 @@ myhost=$(hostname -s)
 d=2021-05-13-15-05-01_model_comparison_data
 f=c001_2.txt
 
-# Run on all 100 tasks
-# ls $d/*.txt | xargs -n 1 -x  basename | xargs -n 1 -I {} -P 40 sh -c "./main --propsim_ll 0 --largeAlphabet=1 --chains=5 --threads=1 --time=10m --input=$d/{} --output=out-small-baseline/{} 2>&1 | tee -a out-small-baseline/{}.log"
+############ Baseline ###############
+
+# Run baseline on all 100 tasks
+#ls $d/*.txt | xargs -n 1 -x  basename | xargs -n 1 -I {} -P 40 sh -c "./main --propsim_ll 0 --largeAlphabet=1 --chains=5 --threads=1 --time=10m --input=$d/{} --output=out-small-baseline/{} 2>&1 | tee -a out-small-baseline/{}.log"
 # ls $d/*.txt | xargs -n 1 -x  basename | xargs -n 1 -I {} -P 0 ./main --propsim_ll 1 --largeAlphabet=1 --chains=5 --threads=1 --time=1m --input=$d/{} --output=out-small-prop/{} > out-small-prop/{}.log
 
-# Run failed tasks
-cat out-small-baseline/tasks_failed.txt | xargs -n 1 -x basename | xargs -n 1 -I {} -P 40 sh -c "./main --propsim_ll 0 --largeAlphabet=1 --chains=5 --threads=1 --time=10m --input=$d/{} --output=out-small-baseline/{} 2>&1 | tee -a out-small-baseline/{}.log"
+# Run baseline failed tasks
+# cat out-small-baseline/tasks_failed.txt | xargs -n 1 -x basename | xargs -n 1 -I {} -P 40 sh -c "./main --propsim_ll 0 --largeAlphabet=1 --chains=5 --threads=1 --time=10m --input=$d/{} --output=out-small-baseline/{} 2>&1 | tee -a out-small-baseline/{}.log"
+
+
+############ PropSim ###############
+
+
+# Run propsim on all 100 tasks
+ls $d/*.txt | xargs -n 1 -x  basename | xargs -n 1 -I {} -P 40 sh -c "./main --propsim_ll 1 --largeAlphabet=1 --chains=5 --threads=1 --time=10m --input=$d/{} --output=out-small-prop/{} 2>&1 | tee -a out-small-prop/{}.log"
+
+
+
+
+############ Other ################
 
 # original command (works locally but not on openmind)
 # ls $d/*.txt | xargs -n 1 basename | parallel --jobs=48 "./main --largeAlphabet=0 --chains=5 --threads=1 --time=10m --input=$d/{1} --output=out-small/{1} > out-small/{1}.log" 
