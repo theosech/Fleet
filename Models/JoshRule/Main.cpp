@@ -162,17 +162,20 @@ public:
 			;}}
 		);
                 /*
+                for (int k=2; k < 10; k++) {
+                        properties.push_back(
+                                {"all_output_els_mod_" + str(k) + "_equals_0", [k](const S& i, const S& o) -> bool {
+                                        for (const long x : o) {
+                                                if (c2i(x) % k != 0) {
+                                                        return false;
+                                                }
+                                        }
+                                        return true;
+                                }}
+                        );
+                }
+
 		for (int k=1; k < 10; k++) {
-			properties.push_back(
-				{"all_output_els_mod_" + str(k) + "_equals_0", [k](const S& i, const S& o) -> bool {
-					for (const long x : o) {
-						if (c2i(x) % k != 0) {
-							return false;
-		   				} 
-					}
-					return true;
-				}}
-			);
 			properties.push_back(
 				{"all_output_els_lt_" + str(k), [k](const S& i, const S& o) -> bool {
 					for (const long x : o) {
@@ -230,6 +233,38 @@ public:
 		}
                 */
 	}
+        void set_property_priors(std::vector<std::vector<defaultdatum_t<S, S> >> const &training_data) {
+            for (auto &p : properties) {
+                p.set_prior(training_data);
+            }
+        }
+
+        void keep_top_n_properties(std::vector<defaultdatum_t<S, S> > const& data) {
+            
+            property_t best_property = properties[0];
+            double lowest_prior = 1.0;
+            double prior_prob;
+
+            for (const auto& p : properties) {
+                int num_true = 0;
+                for (const auto& d : data) {
+                    const bool prop_value = p.apply(d.input, d.output);
+                    num_true = num_true + prop_value;
+                }
+                const PropertyValue prop_value = _get_property_value(num_true, data.size());            
+                prior_prob = p.get_prior(prop_value);
+                if (prior_prob < lowest_prior && prop_value == PropertyValue::allTrue) {
+                    COUT "best property: " << p.name << " value: " << prop_value << " prior " << prior_prob ENDL;
+                    lowest_prior = prior_prob;
+                    best_property = p;
+                }
+            }
+            COUT "Lowest prior property: " << best_property.name << "-> " << lowest_prior ENDLL;
+            std::vector<property_t> filtered_properties;
+            filtered_properties.push_back(best_property);
+            properties = filtered_properties;
+            return;
+       }
 } grammar;
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -263,6 +298,8 @@ S restring(const S& s) {
 #include "Timing.h"
 #include "Strings.h"
 
+
+
 class MyHypothesis : public LOTHypothesis<MyHypothesis,S,S,MyGrammar,&grammar> {
 public:
 	using Super =  LOTHypothesis<MyHypothesis,S,S,MyGrammar, &grammar>;
@@ -277,13 +314,20 @@ public:
 		auto out = callOne(x.input, "<err>"); // NOTE ASSUMING NOT STOCHASTIC
 		
 		const float logA = (largeAlphabet? log(100+1) : log(10+1));
-		return p_delete_append<strgamma,strgamma>(out, x.output, logA); // +1 for N
+		const float ll = p_delete_append<strgamma,strgamma>(out, x.output, logA); // +1 for N
+                const float ground_truth_ll = p_delete_append<strgamma, strgamma>(x.output, x.output, logA);
+                const float EPSILON = 0.00000001;
+                if (std::abs(ground_truth_ll - ll < EPSILON)) {
+                    return 0.0;
+                } else {
+                    return ll;
+                }
 	}
 
 	PropertyValue _get_property_value(const int num_properties_true, const int data_size) {
 		PropertyValue value;
 		if (num_properties_true == data_size) {
-			value = allTrue;
+			value = PropertyValue::allTrue;
 		} else if (num_properties_true == 0) {
 			value = PropertyValue::allFalse;
 		} else {
@@ -300,9 +344,11 @@ public:
 		if (FleetArgs::propsim_ll) {
 			if constexpr (is_iterable_v<data_t>) { 
 				double all_same_count = 0;
+                                double score = 1.0;
 				// TODO (theosech): figure out why we need this
-
+                                double likelihood = 0.0;
 				bool already_computed_likelihood = false;
+
 				for (const MyGrammar::property_t &p : grammar.properties) {
 					// COUT "entered for properties for loop" ENDL;
 					int num_properties_true = 0;
@@ -331,21 +377,16 @@ public:
 
 					PropertyValue prop_value = _get_property_value(num_properties_true, data.size());
 					PropertyValue prop_value_spec = _get_property_value(num_properties_true_spec, data.size());
-
-					if (prop_value == prop_value_spec && prop_value != PropertyValue::mixed) {
-						all_same_count = all_same_count + 1;
-						// COUT "same property value" ENDLL;
-					} else {
-						// COUT "different property value" ENDLL;
-					}
+                                        if (prop_value == prop_value_spec && prop_value == PropertyValue::allTrue) {
+                                            score = score * p.get_joint_prior(prop_value, prop_value_spec);
+                                        }
 				}
-
-				// COUT "all_same_count" << all_same_count ENDL;
-				// COUT "properties" << properties.size() ENDL;
-
-				double to_return = log(all_same_count / (double)grammar.properties.size());
-				// COUT "approximate likelihood: " << to_return ENDLL;
-				return std::max(to_return, likelihood);
+                                if (likelihood == 0.0) {
+                                    return 0.0;
+                                } else {
+                                    score = log(1.0 - score + 0.0001) + likelihood;
+			            return score;
+                                }
 
 			} else {
 				// should never execute this because it must be defined
@@ -408,8 +449,26 @@ size_t trial;
 
 
 #include "ParallelTempering.h"
+#include <iostream>
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
+
+
 
 #ifndef DO_NOT_INCLUDE_MAIN
+
+MyHypothesis::data_t read_task_file(S filename) {
+    MyHypothesis::data_t mydata;
+    for (auto  [i,o] : read_csv<2>(filename, true, ';')) {
+        // must use decomma here because normally commas are vectors not strings
+        S input = decomma(i);
+        S output = decomma(o);
+        mydata.emplace_back(MyHypothesis::datum_t(input, output));
+    }
+    return mydata;
+ }               
 
 int main(int argc, char** argv) { 
 
@@ -425,10 +484,8 @@ int main(int argc, char** argv) {
 	
 	top.set_size(FleetArgs::ntop);
 	COUT "ntop: " << top.N ENDL;
-
-	COUT "number of properties: " << grammar.properties.size() ENDL;
 	
-
+        /*
 	// split on the ; of each row and convert to strings, not vectors
 	for(auto [i,o] : read_csv<2>(FleetArgs::input_path.c_str(), true, ';')) { 
 		// must use decomma here because normally commas are vectors not strings
@@ -438,17 +495,26 @@ int main(int argc, char** argv) {
 		// COUT "output: " << output ENDL;
 		mydata.emplace_back(MyHypothesis::datum_t(input, output));
 	}
+        */
 
-	// for (const auto& d : mydata) {
- //    	// element.doSomething ();
- //    	COUT d ENDL; 
-	// }
-	
+        mydata = read_task_file(FleetArgs::input_path.c_str());
+ 
+      	std::vector<MyHypothesis::data_t> tasks;
+        S path = "2021-05-13-15-05-01_model_comparison_data/";
+        for (const auto & entry : fs::directory_iterator(path)) {
+            MyHypothesis::data_t task_data = read_task_file(entry.path().string());
+            tasks.push_back(task_data);
+        }
+        grammar.set_property_priors(tasks);                   
+	grammar.keep_top_n_properties(mydata);
+
+        COUT "number of properties: " << grammar.properties.size() ENDL;
+
 	//------------------
 	// Run
 	//------------------
 
-
+        
 
 	//COUT "concept\trun\ttrial\tinput\toutput\tcorrect.output\tcorrect\tborn.time\tborn.n\thypothesis" ENDL;
 	tic();
@@ -540,6 +606,7 @@ int main(int argc, char** argv) {
 				for(auto& h : reservoir.values()) { 
 					myfile << QQ(FleetArgs::input_path) TAB  
 						h.born_time TAB h.born_n TAB h.found_run TAB h.found_trial TAB
+                                                h.posterior TAB h.prior TAB h.likelihood TAB
 						QQ(h.string()) ENDL;
 				}
 				myfile.close();
@@ -555,7 +622,8 @@ int main(int argc, char** argv) {
 	COUT "# Elapsed time:" TAB elapsed_seconds() << " seconds " ENDL;
 	COUT "# Samples per second:" TAB FleetStatistics::global_sample_count/elapsed_seconds() ENDL;
 	COUT "# VM ops per second:" TAB FleetStatistics::vm_ops/elapsed_seconds() ENDL;
-
+        
+        
 };
 
 
