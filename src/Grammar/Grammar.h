@@ -544,11 +544,6 @@ public:
 		 * NOTE: this may throw a if the grammar recurses too far (usually that means the grammar is improper)
 		 */
 		
-		if (nonterminal == NULL) {
-			nonterminal = nt<output_t>();
-		}
-
-		
 		if(depth >= GRAMMAR_MAX_DEPTH) {
 			CERR "*** Grammar exceeded max depth, are you sure the grammar probabilities are right?" ENDL;
 			CERR "*** You might be able to figure out what's wrong with gdb and then looking at the backtrace of" ENDL;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Datum.h"
-#include "Hypotheses/Interfaces/Callable.h"
 
 template<typename input_t, typename output_t, typename prop_output_t>
 class Property {
