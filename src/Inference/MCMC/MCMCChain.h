@@ -9,13 +9,20 @@
 
 //#define DEBUG_MCMC 1
 
+/**
+ * @class MCMCChain
+ * @author Steven Piantadosi
+ * @date 25/10/21
+ * @file MCMCChain.h
+ * @brief This represents an MCMC hain on a hypothesis of type HYP. It uses HYP::propose and HYP::compute_posterior
+ * 		  to implement MetropolicHastings. 
+ */
 template<typename HYP> 
 class MCMCChain {
-	// An MCMC chain object running Metropolis-Hastings on hypotheses, via HYP::propose and HYP::compute_posterior. 
 	
 public:
 	
-	HYP current;
+	 HYP current;
 	
 	// It's a little important that we use an OrderedLock, because otherwise we have
 	// no guarantees about chains accessing in a FIFO order. Non-FIFO is especially
@@ -53,8 +60,8 @@ public:
 		current(m.current), data(m.data), maxval(m.maxval),
 		samples(m.samples), proposals(m.proposals), acceptances(m.acceptances), 
 		steps_since_improvement(m.steps_since_improvement)	{
-			temperature = (double)m.temperature;
-			history     = m.history;
+		temperature = m.temperature.load();
+		history     = m.history;
 		
 	}
 	MCMCChain(MCMCChain&& m) {
@@ -66,7 +73,7 @@ public:
 		acceptances = m.acceptances;
 		steps_since_improvement = m.steps_since_improvement;
 		
-		temperature = (double)m.temperature;
+		temperature = m.temperature.load();
 		history = std::move(m.history);		
 	}
 	
@@ -99,8 +106,7 @@ public:
 		
 		std::lock_guard guard(current_mutex);
 		current.compute_posterior(*data);
-		++FleetStatistics::global_sample_count;
-		++samples;
+		// NOTE: We do NOT count this as a "sample" since it is not yielded
 	}
 	
 	
@@ -118,12 +124,12 @@ public:
 		assert(ctl.nthreads == 1 && "*** You seem to have called MCMCChain with nthreads>1. This is not how you parallel. Check out ChainPool"); 
 		
 		#ifdef DEBUG_MCMC
-		DEBUG("# Starting MCMC Chain on\t", current.posterior, current.prior, current.likelihood, current.string());
+			DEBUG("# Starting MCMC Chain on\t", current.posterior, current.prior, current.likelihood, current.string());
 		#endif 
 		
 		// I may have copied its start time from somewhere else, so change that here
 		ctl.start();		
-		while(ctl.running()) {
+		do {
 			
 			if(current.posterior > maxval) { // if we improve, store it
 				maxval = current.posterior;
@@ -145,74 +151,69 @@ public:
 				steps_since_improvement = 0; // reset the couter
 				maxval = current.posterior; // and the new max
 				
-				++samples;
-				++FleetStatistics::global_sample_count;
-
-				co_yield current; 
-				
-				continue;
-			}
-			
-			#ifdef DEBUG_MCMC
-			DEBUG("\n# Current\t", data->size(), current.posterior, current.prior, current.likelihood, current.string());
-			#endif 
-			
-			std::lock_guard guard(current_mutex); // lock below otherwise others can modify
-
-			// propose, but restart if we're -infinity
-			auto [proposal, fb] = (current.posterior > -infinity ? current.propose() : std::make_pair(current.restart(), 0.0));			
-			
-			++proposals;
-			
-			// A lot of proposals end up with the same function, so if so, save time by not
-			// computing the posterior
-			if(proposal == current) {
-				// copy all the properties
-				proposal.posterior  = current.posterior;
-				proposal.prior      = current.prior;
-				proposal.likelihood = current.likelihood;
-				proposal.born       = current.born;
-			}
+				co_yield current;// must be done with lock
+			} 
 			else {
-				proposal.compute_posterior(*data);
-			}
-
-			#ifdef DEBUG_MCMC
-			DEBUG("# Proposed \t", proposal.posterior, proposal.prior, proposal.likelihood, fb, proposal.string());
-			#endif 
-			
-			// use MH acceptance rule, with some fanciness for NaNs
-			double ratio = proposal.at_temperature(temperature) - current.at_temperature(temperature) - fb; 		
-			if((std::isnan(current.posterior))  or
-			   (current.posterior == -infinity) or
-			   ((not std::isnan(proposal.posterior)) and
-				(ratio >= 0.0 or uniform() < exp(ratio) ))) {
-				[[unlikely]];
-							
+				// normally we go here and do a proper proposal
+				
 				#ifdef DEBUG_MCMC
-				DEBUG("# Accept");
+				DEBUG("# Current", current.posterior, current.prior, current.likelihood, current.string());
 				#endif 
 				
-				current = std::move(proposal);
-  
-				history << true;
-				++acceptances;
-				
-			}
-			else {
-				history << false;
-			}
+				std::lock_guard guard(current_mutex); // lock below otherwise others can modify
 
-			++samples;
+				// propose, but restart if we're -infinity
+				auto [proposal, fb] = (current.posterior > -infinity ? current.propose() : std::make_pair(current.restart(), 0.0));			
+				
+				++proposals;
+				
+				// A lot of proposals end up with the same function, so if so, save time by not
+				// computing the posterior
+				if(proposal == current) {
+					// copy all the properties
+					// NOTE: This is necessary because == might just check value, but operator= will copy everything else
+					proposal = current; 
+				}
+				else {
+					proposal.compute_posterior(*data);
+				}
+
+				#ifdef DEBUG_MCMC
+				DEBUG("# Proposed", proposal.posterior, proposal.prior, proposal.likelihood, "fb="+str(fb), proposal.string());
+				#endif 
+				
+				// use MH acceptance rule, with some fanciness for NaNs
+				double ratio = proposal.at_temperature(temperature) - current.at_temperature(temperature) - fb; 		
+				if((std::isnan(current.posterior))  or
+				   (current.posterior == -infinity) or
+				   ((not std::isnan(proposal.posterior)) and
+					(ratio >= 0.0 or uniform() < exp(ratio) ))) {
+				
+					[[unlikely]];
+								
+					#ifdef DEBUG_MCMC
+						DEBUG("# ACCEPT");
+					#endif 
+					
+					current = std::move(proposal);
+	  
+					history << true;
+					
+					++acceptances;
+				}
+				else {
+					history << false;
+				}
+				
+				co_yield current; // must be done with lock
+			}
+			
+			++samples;			
 			++FleetStatistics::global_sample_count;
-		
-			co_yield current;
-						
-		} // end the main loop	
-		
-		
-		
+			
+		} while(ctl.running()); // end the main loop	-- at the end because ctl.running() counts the samples we've taken
 	}
+	
 	void run() { 
 		/**
 		 * @brief Run forever

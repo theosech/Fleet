@@ -1,14 +1,28 @@
 #pragma once
 
+#include <fstream>
 #include <random>
 #include <functional>
 #include <thread>
-
 #include "Errors.h"
 #include "Numerics.h"
+#include "Singleton.h"
+
+#include <sys/syscall.h>
+#include <sys/random.h>
+
+
+size_t sysrandom(void* dst, size_t dstlen) {
+	// from https://stackoverflow.com/questions/45069219/how-to-succinctly-portably-and-thoroughly-seed-the-mt19937-prng
+    char* buffer = reinterpret_cast<char*>(dst);
+    std::ifstream stream("/dev/urandom", std::ios_base::binary | std::ios_base::in);
+    stream.read(buffer, dstlen);
+    return dstlen;
+}
+
 
 /**
- * @class tlRng
+ * @class thread_local_rng
  * @author Steven Piantadosi
  * @date 15/06/21
  * @file Random.h
@@ -20,6 +34,13 @@
 thread_local class thread_local_rng : public std::mt19937 {
 public:
 	thread_local_rng() : std::mt19937() {
+		
+		// on construction we initialize from /dev/urandom
+		std::array<unsigned long, std::mt19937::state_size> state;
+		sysrandom(state.begin(), state.size()*sizeof(unsigned long));
+		std::seed_seq seedseq(state.begin(), state.end());
+		
+		this->seed(seedseq);
 	}
 	
 	/**
@@ -27,17 +48,23 @@ public:
 	 */	
 	void threaded_seed(unsigned long seed) {
 		extern std::thread::id main_thread_id;
+		
+		std::array<unsigned long, std::mt19937::state_size> state;
+		sysrandom(state.begin(), state.size()*sizeof(unsigned long));
+		std::seed_seq seedseq(state.begin(), state.end());
+		
 		if(seed != 0) {
 			if(std::this_thread::get_id() == main_thread_id) {
 				this->seed(seed);
 			}
 			else {
 				std::cerr << "# Warning: seed " << seed << " is only applied to the first thread." << std::endl;
-				this->seed(std::random_device{}());
+				this->seed(seedseq);
 			}
 		}
 		else {
-			this->seed(std::random_device{}());
+			// note this re-seeds relative to constructor
+			this->seed(seedseq);
 		}
 	}
 	
@@ -171,17 +198,12 @@ double sample_z(const T& s, const std::function<double(const t&)>& f) {
 		
 	double z = 0.0;
 	for(auto& x: s) {
-		z += f(x);
+		auto fx = f(x);
+		if(not std::isnan(fx))
+			z += f(x);
 	}
 	return z; 
 }
-
-template<typename t, typename T> 
-std::pair<t*,double> sample(const T& s, const std::function<double(const t&)>& f = [](const t& v){return 1.0;}) {
-	// An interface to sample that computes the normalizer for you 
-	return sample(s, sample_z(s,f), f);
-}
-
 
 template<typename t, typename T> 
 std::pair<t*,double> sample(const T& s, double z, const std::function<double(const t&)>& f = [](const t& v){return 1.0;}) {
@@ -191,10 +213,11 @@ std::pair<t*,double> sample(const T& s, double z, const std::function<double(con
 	// of selecting that *element* (index), not the probability of selecting anything equal to it
 	// (i.e. we defaultly don't double-count equal options). For that, use p_sample_eq below
 	// here z is the normalizer, z = sum_x f(x) 
+	assert(z > 0 && "*** Cannot call sample with zero normalizer -- is s empty?");
 	double r = z * uniform();
 	for(auto& x : s) {
 		
-		double fx = f(x);
+		auto fx = f(x);
 		if(std::isnan(fx)) continue; // treat as zero prob
 		assert(fx >= 0.0);
 		r -= fx;
@@ -204,6 +227,13 @@ std::pair<t*,double> sample(const T& s, double z, const std::function<double(con
 	
 	throw YouShouldNotBeHereError("*** Should not get here in sampling");	
 }
+
+template<typename t, typename T> 
+std::pair<t*,double> sample(const T& s, const std::function<double(const t&)>& f = [](const t& v){return 1.0;}) {
+	// An interface to sample that computes the normalizer for you 
+	return sample<t,T>(s, sample_z<t,T>(s,f), f);
+}
+
 
 std::pair<int,double> sample_int(unsigned int max, const std::function<double(const int)>& f = [](const int v){return 1.0;}) {
 	// special form for where the ints (e.g. indices) Are what f takes)

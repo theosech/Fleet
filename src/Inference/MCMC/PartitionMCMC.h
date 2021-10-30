@@ -33,6 +33,7 @@ std::set<HYP> get_partitions(HYP& h0, const size_t max_depth, const size_t max_s
 			for(int n=0;n<neigh;n++) {
 				auto newh = h;
 				newh.expand_to_neighbor(n);
+				PRINTN(h.string(), newh.string(), n, dd, max_depth);
 				
 				// now we need to check here and make sure that there aren't any complete trees
 				// because if there are, we won't include them in any trees below
@@ -43,7 +44,7 @@ std::set<HYP> get_partitions(HYP& h0, const size_t max_depth, const size_t max_s
 		}
 		
 		// if we made too many, return what we had, else keep going
-		if(nxt.size() > max_size){
+		if(max_size > 0 and nxt.size() > max_size){
 			return cur; 
 		}
 		else {
@@ -91,7 +92,7 @@ public:
 			x.complete(); // fill in any structural gaps
 		
 			this->pool.push_back(MCMCChain<HYP>(x, data));
-			this->running.push_back(false);
+			this->running.push_back(ChainPool<HYP>::RunningState::READY);
 			
 			#ifdef DEBUG_PARTITION_MCMC
 				COUT "Starting PartitionMCMC on " << x.string() ENDL;

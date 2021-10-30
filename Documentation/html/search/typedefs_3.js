@@ -1,4 +1,5 @@
 var searchData=
 [
-  ['ft_1464',['FT',['../class_grammar.html#af9b9935f4da29e68087b25ef75f22564',1,'Grammar::FT()'],['../class_virtual_machine_state.html#acacd9869c4a5ff3a765f6bd7d5bae35c',1,'VirtualMachineState::FT()']]]
+  ['generator_1533',['generator',['../_coroutines_8h.html#ab06a612c41229b9582ada8655001e2b0',1,'Coroutines.h']]],
+  ['grammar_5ft_1534',['Grammar_t',['../class_lexicon.html#ad31914cd93f183a0a44867682f83e2ba',1,'Lexicon::Grammar_t()'],['../class_l_o_t_hypothesis.html#aea8a655b606b49e2afd101913499915f',1,'LOTHypothesis::Grammar_t()']]]
 ];

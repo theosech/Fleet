@@ -20,15 +20,21 @@ extern volatile sig_atomic_t CTRL_C;
  * 			balances swaps up and down the ladder (which makes it efficient). 
  * 			The adaptation scheme follows https://arxiv.org/abs/1501.05823
  * 			NOTE This starts two extra threads, one for adapting and one for swapping, but they mostly wait around.
- * 		
  */
-
 template<typename HYP>
 class ParallelTempering : public ChainPool<HYP> {
-
-	const unsigned long WAIT_AND_SLEEP = 50; // how many ms to wait between checking to see if it is time to swap/adapt
 	
+	// loops on the swapper and adapter threads wait this long before checking their time, to make them interruptible
+	// NOTE that this can throw off timing speeds for e.g. parallel tempering for very small amounts of data
+	const unsigned long time_resolution_ms = 25; 
+		
 public:
+	
+	time_ms swap_every = 250; // try a round of swaps this often 
+	time_ms adapt_every = 5000; // 
+	
+	OrderedLock overall_mutex; // we need a mutex to control access to chains, otherwise swappers and adapters etc can lock
+	
 	std::vector<double> temperatures;
 	
 	// Swap history stores how often the i'th chain swaps with the (i-1)'st chain
@@ -53,33 +59,37 @@ public:
 	ParallelTempering(HYP& h0, typename HYP::data_t* d, unsigned long n, double maxT) : 
 		ChainPool<HYP>(h0, d, n),terminate(false) {
 		assert(n != 0);
-		
 		swap_history.reserve(n);
 		
-		if(n == 1) {
+		if(n == 1) { // just enforce this as a hard cosntraint. 
 			this->pool[0].temperature = 1.0;
 		}
 		else {
 			for(size_t i=0;i<n;i++) {
+				
 				this->pool[i].temperature = exp(i * log(maxT)/(n-1));
 				swap_history.emplace_back();
 			}
 		}
 	}
 	
-	void __swapper_thread(time_ms swap_every ) {
+	void __swapper_thread() {
 			
 		// runs a swapper every swap_every ms (double)
 		// NOTE: If we have 1 element in the pool, it is caught below
 		while(!(terminate or CTRL_C)) {
 			
-			std::this_thread::sleep_for(std::chrono::milliseconds(swap_every)); // every this long we'll do a whole swap round
+			// make this interruptible
+			auto last = now();
+			while(time_since(last) < swap_every and (not CTRL_C) and (not terminate))
+				std::this_thread::sleep_for(std::chrono::milliseconds(time_resolution_ms)); 
 			
 			// Here we are going to go through and swap each chain with its neighbor
 			for(size_t k=this->pool.size()-1;k>=1;k--) { // swap k with k-1; starting at the bottom so stuff can percolate up
-				if(CTRL_C) break; 
+				if(CTRL_C or terminate) break; 
 				
 				// get both of these thread locks
+				std::lock_guard og(overall_mutex); // must get this so we don't lock by another thread stealing one of below
 				std::lock_guard guard1(this->pool[k-1].current_mutex);
 				std::lock_guard guard2(this->pool[k  ].current_mutex);
 				
@@ -88,15 +98,19 @@ public:
 				double Tswp = this->pool[k-1].at_temperature(this->pool[k].temperature)     + this->pool[k].at_temperature(this->pool[k-1].temperature);
 				double R = Tswp-Tnow;
 			
+//				CERR R TAB  this->pool[k].getCurrent().likelihood TAB  this->pool[k-1].getCurrent().likelihood ENDL;
+			
 				if(R >= 0 or uniform() < exp(R)) { 
 										
 					#ifdef PARALLEL_TEMPERING_SHOW_DETAIL
-					COUT "# Swapping " <<k<< " and " <<(k-1)<<"." TAB this->pool[k].current.posterior TAB this->pool[k-1].current.posterior TAB this->pool[k].current.string() TAB this->pool[k-1].current.string() ENDL;
+					COUT "# Swapping " <<k<< " and " <<(k-1)<<"." TAB Tnow TAB Tswp TAB this->pool[k].current.likelihood TAB this->pool[k-1].current.likelihood ENDL;
+					COUT "# " TAB this->pool[k].current.string() ENDL;
+					COUT "# " TAB this->pool[k-1].current.string() ENDL;
 					#endif
 					
 					// swap the chains
-					std::swap(this->pool[k].current, this->pool[k-1].current);
-					
+					std::swap(this->pool[k].getCurrent(), this->pool[k-1].getCurrent());
+
 					swap_history.at(k) << true;
 				}
 				else {
@@ -107,36 +121,35 @@ public:
 		}
 	}
 	
-	void __adapter_thread(time_ms adapt_every) {
+	void __adapter_thread() {
 		
-		while(! (terminate or CTRL_C) ) {
-			
+		while(not (terminate or CTRL_C) ) {
 			
 			// we will sleep for adapt_every but in tiny chunks so that 
 			// we can be stopped with CTRL_C
 			auto last = now();
-			while(time_since(last) < adapt_every and !CTRL_C) 
-				std::this_thread::sleep_for(std::chrono::milliseconds(100)); 
+			while(time_since(last) < adapt_every and (not CTRL_C) and (not terminate))
+				std::this_thread::sleep_for(std::chrono::milliseconds(time_resolution_ms)); 
 			
-			if(CTRL_C) return;
+			if(CTRL_C or terminate) return;
 			
 			// This is not interruptible with CTRL_C: std::this_thread::sleep_for(std::chrono::milliseconds(adapt_every));
 			
-			#ifdef PARALLEL_TEMPERING_SHOW_DETAIL
-				show_statistics();
-			#endif
+//			#ifdef PARALLEL_TEMPERING_SHOW_DETAIL
+//				show_statistics();
+//			#endif
 				
 			adapt(); // TOOD: Check what counts as t
 		}
 	}
 	
 	
-	generator<HYP&> run(Control ctl) { throw NotImplementedError(); }
-	generator<HYP&> run(Control ctl, time_ms swap_every, time_ms adapt_every) {
+	generator<HYP&> run(Control ctl) {
+		
 		
 		// Start a swapper and adapter thread
-		std::thread swapper(&ParallelTempering<HYP>::__swapper_thread, this, swap_every); // pass in the non-static mebers like this:
-		std::thread adapter(&ParallelTempering<HYP>::__adapter_thread, this, adapt_every);
+		std::thread swapper(&ParallelTempering<HYP>::__swapper_thread, this); // pass in the non-static mebers like this:
+		std::thread adapter(&ParallelTempering<HYP>::__adapter_thread, this);
 
 		// run normal pool run
 		for(auto& h : ChainPool<HYP>::run(ctl)) {
@@ -152,8 +165,14 @@ public:
 	}
 	
 	void show_statistics() {
+		
 		COUT "# Pool info: \n";
 		for(size_t i=0;i<this->pool.size();i++) {
+			
+			// must hold the lock or this can lock with the other
+			std::lock_guard og(overall_mutex);
+			std::lock_guard guard(this->pool[i].current_mutex);
+			
 			// NOTE: WE would normally want a lock guard here, EXCEPT that when we call this inside a loop, we can't get the guard
 			// because it's being held by the generator. So for now, there is no output lock
 //			std::lock_guard guard1(this->pool[i].current_mutex); // definitely need this to print
@@ -207,8 +226,6 @@ public:
  */
 template<typename HYP>
 class DataTempering : public ParallelTempering<HYP> {
-	
-	const unsigned long WAIT_AND_SLEEP = 100; // how many ms to wait between checking to see if it is time to swap/adapt
 	
 public:
 	std::vector<FiniteHistory<bool>> swap_history;

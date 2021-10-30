@@ -42,6 +42,9 @@ public:
 
 
 int main(int argc, char** argv){ 	
+	
+	alphabet = "abcd"; // set this as the default. 
+	
 	Fleet fleet("An example of grammar inference for formal languages");
 	fleet.add_option("--hypotheses",  hypothesis_path, "Where to load or save hypotheses.");
 	fleet.add_option("--runtype",  runtype, "hypotheses = do we just do mcmc on hypotheses; grammar = mcmc on the grammar, loading the hypotheses; both = do both");
@@ -171,6 +174,8 @@ int main(int argc, char** argv){
 				// We'll use the MAP grammar hypothesis for this
 				auto& MAP = topMAP.best();
 				const Matrix hposterior = MAP.compute_normalized_posterior(); 
+				
+				PRINTN("#", h.posterior ); 
 				
 				std::ofstream outMAP(FleetArgs::output_path+"/MAP-strings.txt");
 				std::ofstream outtop(FleetArgs::output_path+"/top-H.txt");

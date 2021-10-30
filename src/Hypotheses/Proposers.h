@@ -20,6 +20,60 @@ namespace Proposals {
 		auto g = grammar->generate(from.nt());
 		return std::make_pair(g, grammar->log_probability(g) - grammar->log_probability(from));
 	}
+	
+	/**
+	 * @brief Probability of proposing from a to b under regeneration
+	 * @param grammar
+	 * @param a
+	 * @param b
+	 * @return 
+	 */	
+	template<typename GrammarType>
+	double p_regeneration_propose_to(GrammarType* grammar, const Node& a, const Node& b) {
+		
+		// TODO: Currently does not take into account can_resample
+		// TODO: FIX THAT PLEASE
+		
+		// what's the probability of replacing the root of a and generating b?
+		double alp = -log(a.count()); // probability of choosing any given node o in a
+		double wholetree = alp + grammar->log_probability(b);
+		
+		if(a.rule != b.rule) {
+			// I must regenerate this whole tree
+			return wholetree;
+		}
+		else {
+			assert(a.nchildren() == b.nchildren()); // not handling missing kids
+			
+			size_t ndiff = 0; // how many children are different?
+			int who = 0; // if there is exactly one difference, who is it?
+			for(size_t i = 0;i<a.nchildren();i++) {
+				if(a.child(i) != b.child(i)) { 
+					who = i;
+					ndiff++;
+				}
+			}
+			
+			if(ndiff == 0) {
+				// if all the kids are the same, we could propose to any of them...
+				double lp = wholetree; // could propose to whole tree
+				for(size_t i=0;i<a.nchildren();i++) {
+					lp = logplusexp(lp, alp + p_regeneration_propose_to(grammar, a.child(i), b.child(i)));
+				}
+				return lp;
+			}
+			else if(ndiff == 1) {
+				// we have to propose to who or root
+				return logplusexp(wholetree, 
+								  alp + p_regeneration_propose_to(grammar, a.child(who), b.child(who)));
+			}
+			else {
+				// more than one difference means we have to propose to the root
+				return wholetree; 
+			}
+				
+		}
+	}
 
 	/**
 	 * @brief Regenerate with a rational-rules (Goodman et al.) style regeneration proposal: pick a node uniformly and regenerate it from the grammar. 
@@ -145,7 +199,7 @@ namespace Proposals {
 //		checkNode(grammar, *s);
 
 		// now if we replace something below t with s, there are multiples ones we could have done...
-		auto lpq = lp_sample_eq(*s, t, can_resample_matches_s_nt); // 
+		auto lpq = lp_sample_eq(*q, *s, can_resample_matches_s_nt); // 
 			
 //		CERR "----INSERT-----------" ENDL;
 //		CERR from ENDL;
@@ -163,6 +217,16 @@ namespace Proposals {
 						  lp_sample_eq<Node,Node>(old_s, *s, can_resample_matches_s_nt);
 //		PRINTN("RETURNINGI", ret);
 		
+//		if(std::isinf(forward)) {
+//			PRINTN(slp, lpq, grammar->log_probability(t), grammar->log_probability(old_s) );
+//			PRINTN(s->string(), t.string());
+//			
+//		}
+		
+		assert(not std::isinf(forward));
+		assert(not std::isinf(backward));
+		
+		
 		return std::make_pair(ret, forward-backward);		
 	}
 	
@@ -170,7 +234,7 @@ namespace Proposals {
 	std::pair<Node, double> delete_tree(GrammarType* grammar, const Node& from) {
 		// This proposal selects a node, regenerates, and then copies what was there before somewhere below 
 		// in the replaced tree. NOTE: it must regenerate something with the right nonterminal
-		// since that's what's being replaced! 
+		// since that's what's being replaced
 		
 		#ifdef DEBUG_MCMC
 			CERR "DELETE-TREE"  TAB from.string()  ENDL;
@@ -208,10 +272,106 @@ namespace Proposals {
 						  tlp + 
 						  lp_sample_eq<Node,Node>(newq,old_s,can_resample_matches_s_nt);
 		
+		assert(not std::isinf(forward));
+		assert(not std::isinf(backward));
+		
 		return std::make_pair(ret, forward-backward);		
 	}
 	
 	
+	/**
+	 * @brief This samples functions f(a,b) -> g(a,b) (e.g. without destroying what's below). This uses a 
+	 *        little trick that the node only stores the rule, so we can swap it out if we want
+	 * @param grammar
+	 * @param from
+	 * @return 
+	 */	
+	template<typename GrammarType>
+	std::pair<Node,double> sample_function_leaving_args(GrammarType* grammar, const Node& from) {
+		
+		Node ret = from; // copy
+		
+		// TODO CHECK HERE THAT THE SAMPLING WAS POSSIBLE
+		auto [s, slp] = sample<Node,Node>(ret, can_resample);
+		
+		// find everything in the grammar that matches s's type
+		std::vector<Rule*> matching_rules;
+		for(auto& r: grammar->rules[s->rule->nt]) {
+			if(r.child_types == s->rule->child_types) {
+				matching_rules.push_back(&r);
+//				PRINTN("Matching ", r, *s->rule);
+			}
+		}
+		assert(matching_rules.size() >= 1); // we had to have matche done...
+		
+		// now sample from one
+		std::function sampler = +[](const Rule* r) -> double { return r->p; };
+		auto [newr, __rp] = sample<Rule*>(matching_rules, sampler); // sample according to p
+		assert(newr != nullptr and *newr != nullptr);
+		assert( (*newr)->nt == s->rule->nt);
+		// NOTE: confusingly, newr is a Rule** so it must be deferenced to get a poitner 
+		const Rule* oldRule = s->rule; 
+		
+		// set the rule and its probability -- save us the copying
+		s->rule = *newr;
+		s->lp = (*newr)->p / grammar->Z[s->rule->nt];
+		
+		// here we compute fb while ignoring the normalizing constants which is why we don't use rp
+		double fb = log(sampler(*newr))-log(sampler(oldRule));
+		
+		return std::make_pair(ret, fb); // forward-backward is just probability of sampling rp since s cancels
+	}
+
+
+	/**
+	 * @brief This propose swaps around arguments of the same type
+	 * @param grammar
+	 * @param from
+	 * @return 
+	 */
+	template<typename GrammarType>
+	std::pair<Node,double> swap_args(GrammarType* grammar, const Node& from) {
+		
+		Node ret = from; // copy
+//		PRINTN("Swapping1 ", ret);
+		
+		// TODO CHECK HERE THAT THE SAMPLING WAS POSSIBLE
+		auto [s, slp] = sample<Node,Node>(ret, can_resample);
+		
+		// who is going to be swapped
+		size_t J = myrandom(s->nchildren()); // check if anything is of this type
+		
+		// with what
+		std::vector<int> matching_indices;
+		for(size_t i=0;i<s->nchildren();i++) {
+			if(i == J) 
+				continue;
+				
+			if(s->child(i).rule->nt == s->child(J).rule->nt) {
+				matching_indices.push_back(i);
+			}
+		}
+		
+		if(matching_indices.size() == 0) {
+			
+			return std::make_pair(ret, 0.0);
+			
+		}
+		else {
+			
+			// choose one
+			auto i = matching_indices[myrandom(matching_indices.size())];
+			
+			Node tmp = s->child(i); // copy (unfortunatley -- probably not necessary using std::swap)
+			s->set_child(i, std::move(s->child(J)));
+			s->set_child(J, std::move(tmp));
+			
+//			PRINTN("Swapping2 ", ret);
+		
+			return std::make_pair(ret, 0.0);
+		}
+	}
+		
 		
 
 }

@@ -77,7 +77,7 @@ public:
 						
 				// Here we are going to use a little hack -- we actually know that vms->program_loader
 				// is of type MyHypothesis, so we will cast to that
-				auto* h = dynamic_cast<ConstantContainer*>(vms->program_loader);
+				auto* h = dynamic_cast<ConstantContainer*>(vms->program.loader);
 				if(h == nullptr) { assert(false); }
 				else {
 					assert(h->constant_idx < h->constants.size()); 
@@ -86,14 +86,12 @@ public:
 		}), 5.0);
 							
 		add("x",             Builtins::X<MyGrammar>, 5.0);
-	}
-					  
+	}					  
 					  
 } grammar;
 
 // check if a rule is constant
 bool isConstant(const Rule* r) { return r->format == "C"; }
-
 
 ///~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 /// Define hypothesis
@@ -111,12 +109,16 @@ public:
 	using Super::Super;
 
 	virtual D callOne(const D x, const D err) {
+		// We need to override this because LOTHypothesis::callOne asserts that the program is non-empty
+		// but actually ours can be if we are only a constant. 
 		// my own wrapper that zeros the constant_i counter
+		
 		constant_idx = 0;
-		auto out = Super::callOne(x,err);
+		const auto out = Super::callOne(x,err);
 		assert(constant_idx == constants.size()); // just check we used all constants
 		return out;
 	}
+	
 
 	double compute_single_likelihood(const datum_t& datum) override {
 		
@@ -245,8 +247,7 @@ public:
 	virtual void randomize_constants() {
 		// NOTE: Because of how fb is computed in propose, we need to make this the same as the prior
 		constants.resize(count_constants());
-		for(size_t i=0;i<constants.size();i++) {
-			
+		for(size_t i=0;i<constants.size();i++) {			
 			constants[i] = constant_propose(0, random_scale());
 		}
 	}
@@ -419,7 +420,7 @@ int main(int argc, char** argv){
  	// Set up the grammar and hypothesis
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 		
-	MyHypothesis h0 = MyHypothesis::sample();
+	MyHypothesis h0; // NOTE: We do NOT want to sample, since that constrains the MCTS 
 	
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	// Run MCTS

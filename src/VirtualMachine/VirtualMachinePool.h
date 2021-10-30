@@ -1,7 +1,6 @@
 #pragma once
 
 #include "DiscreteDistribution.h"
-#include "Hypotheses/Interfaces/ProgramLoader.h"
 #include "VirtualMachineControl.h"
 
 #include <vector>
@@ -28,8 +27,6 @@ DiscreteDistribution<typename VirtualMachineState_t::output_t>  marginal_vms_out
 }
 
 
-	
-	
 /**
  * @class VirtualMachinePool
  * @author piantado

@@ -10,7 +10,6 @@
 #include "Stack.h"
 #include "Statistics/FleetStatistics.h"
 #include "RuntimeCounter.h"
-#include "Hypotheses/Interfaces/ProgramLoader.h"
 #include "VirtualMachineControl.h"
 
 #include "VMSRuntimeError.h"
@@ -20,6 +19,10 @@
 // NOTE: This is risky because if we mess up something in implementation, this check often 
 // helps to find it 
 //#define NO_CHECK_END_STACK_SIZE 1 
+
+// These are the only types of classes we are able to memoize in a lexicon
+// NOTE: We need short because that's the "key" used for LOTHypothesis instead of lexicon
+#define LEXICON_MEMOIZATION_TYPES  short,std::string,int 
 
 namespace FleetStatistics {}
 template<typename X> class VirtualMachinePool;
@@ -57,12 +60,15 @@ public:
 	
 	//static constexpr double    LP_BREAKOUT = 5.0; // we keep executing a probabilistic thread as long as it doesn't cost us more than this compared to the top
 	
-	Program            program; 
+	Program<this_t>    program; // programs are instructions for myself
 	VMSStack<input_t>  xstack; //xstackthis stores a stack of the x values (for recursive calls)
 	const output_t&    err; // what error output do we return? Just a reference to a value for speed
 	double             lp; // the probability of this context
 	
 	unsigned long 	  recursion_depth; // when I was created, what was my depth?
+	
+private:
+	// these are private and should only be accessed via stack(), mem(), memstack() below
 	
 	// This is a little bit of fancy template metaprogramming that allows us to define a stack
 	// like std::tuple<VMSStack<bool>, VMSStack<std::string> > using a list of type names defined in VM_TYPES
@@ -70,14 +76,16 @@ public:
 	struct stack_t { std::tuple<VMSStack<args>...> value; };
 	stack_t<VM_TYPES...> _stack; // our stacks of different types
 	
-	typedef int index_t; // how we index into factorized lexica -- NOTE: must be castable from Instruction.arg 
+	// same for defining memoizaition types -- here these are the only ones we allow
+	template<typename... args>
+	struct mem_t { std::tuple<std::map<std::pair<args,input_t>,output_t>...> value; };
+	mem_t<LEXICON_MEMOIZATION_TYPES> _mem;
 	
-	// must have a memoized return value, that permits factorized by requiring an index argument
-	std::map<std::pair<index_t, input_t>, output_t> mem; 
+	template<typename... args>
+	struct memstack_t { std::tuple< VMSStack<std::pair<args, input_t>>...> value; };
+	memstack_t<LEXICON_MEMOIZATION_TYPES> _memstack;
 
-	// when we recurse and memoize, this stores the arguments (index and input_t) for us to 
-	// rember after the program trace is done
-	VMSStack<std::pair<index_t, input_t>> memstack;
+public:
 
 	vmstatus_t status; // are we still running? Did we get an error?
 	
@@ -86,16 +94,19 @@ public:
 	// moment so this may need to be optimized later to be optional
 	RuntimeCounter runtime_counter;
 	
-	// what we use to load programs
-	ProgramLoader* program_loader;
-	
 	// where we place random flips back onto
 	VirtualMachinePool<this_t>* pool;
 	
-	VirtualMachineState(input_t x, const output_t& e, ProgramLoader* pl, VirtualMachinePool<this_t>* po) :
-		err(e), lp(0.0), recursion_depth(0), status(vmstatus_t::GOOD), program_loader(pl), pool(po) {
+	VirtualMachineState(input_t x, const output_t& e, VirtualMachinePool<this_t>* po) :
+		err(e), lp(0.0), recursion_depth(0), status(vmstatus_t::GOOD), pool(po) {
 		xstack.push(x);	
 	}
+	
+	template<typename T>
+	std::map<std::pair<T,input_t>,output_t>& mem() { return std::get<std::map<std::pair<T,input_t>,output_t>>(_mem.value); }
+ 
+	template<typename T>
+	VMSStack<std::pair<T,input_t>>& memstack() { return std::get<VMSStack<std::pair<T,input_t>>>(_memstack.value); }
 	
 	/**
 	 * @brief These must be sortable by lp so that we can enumerate them from low to high probability in a VirtualMachinePool 

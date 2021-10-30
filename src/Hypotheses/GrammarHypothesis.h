@@ -54,7 +54,7 @@ public:
 	// iterate so now we might make a map in constructing, but we stores as a vector of pairs
 	using Predict_t = Vector2D<std::vector<std::pair<typename HYP::output_t,double>>>; 
 	
-	VectorHalfNormalHypothesis logA; 
+	VectorNormalHypothesis logA; 
 	
 	// Here is a list of built-in parameters that we can use. Each stores a standard
 	// normal and a value under the specified transformation, which is chosen here to give 
@@ -300,13 +300,13 @@ public:
 			
 			// sometimes our predicted data is the same as our previous data
 			// so we are going to include that so we don't keep recomputing it
-			auto ret = hypotheses[h](*human_data[0].predict);
+			auto ret = hypotheses[h].call(*human_data[0].predict);
 			
 			for(size_t di=0;di<human_data.size();di++) {	
 				
 				// only change ret if its different
 				if(di > 0 and (*human_data[di].predict != *human_data[di-1].predict))
-					ret = hypotheses[h](*human_data[di].predict);
+					ret = hypotheses[h].call(*human_data[di].predict);
 				
 				// we get back a discrete distribution, but we'd like to store it as a vector
 				// so its faster to iterate. NOTE: the second elemnt here is exp(x.second), 
@@ -423,7 +423,7 @@ public:
 		}		
 
 
-		// Ok this needs a little explanation. IF we have overwritten the types, then we can get compilation
+		// Ok this needs a little explanation. If we have overwritten the types, then we can get compilation
 		// errors below because for instance r.first won't be of the right type to index into model_predictions.
 		// So this line catches that and removes this chunk of code at compile time if we have removed
 		// those types. In its place, we add a runtime assertion fail, meaning you should have overwritten
@@ -442,6 +442,9 @@ public:
 				double ll = 0.0; // the likelihood here
 				auto& di = human_data[i];
 				for(const auto& [r,cnt] : di.responses) {
+					
+//					PRINTN(i, r, cnt, ll, alpha.get(), human_chance_lp(r,di), model_predictions[r]);
+					
 					ll += cnt * logplusexp( log(1.0-alpha.get()) + human_chance_lp(r,di), 
 					                        log(alpha.get()) + log(model_predictions[r])); 
 				}

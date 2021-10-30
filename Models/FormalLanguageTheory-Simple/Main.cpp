@@ -49,17 +49,18 @@ public:
 		}));
 
 		add("\u00D8",        +[]()         -> S          { return S(""); }, 10.0);
-		add("(%s==%s)",      +[](S x, S y) -> bool       { return x==y; });
+		add("eq(%s,%s)",      +[](S x, S y) -> bool       { return x==y; });
 
 		add("and(%s,%s)",    Builtins::And<MyGrammar>);
 		add("or(%s,%s)",     Builtins::Or<MyGrammar>);
 		add("not(%s)",       Builtins::Not<MyGrammar>);
 		
-		add("x",             Builtins::X<MyGrammar>, 10);
-		add("if(%s,%s,%s)",  Builtins::If<MyGrammar,S>);
-		add("if(%s,%s,%s)",  Builtins::If<MyGrammar,char>);
-		add("flip()",        Builtins::Flip<MyGrammar>, 10.0);
-		add("recurse(%s)",   Builtins::Recurse<MyGrammar>);
+		add("x",               Builtins::X<MyGrammar>, 10);
+		add("if_s(%s,%s,%s)",  Builtins::If<MyGrammar,S>);
+		add("if_c(%s,%s,%s)",  Builtins::If<MyGrammar,char>);
+		add("flip()",          Builtins::Flip<MyGrammar>, 10.0);
+		add("F(%s)",           Builtins::Recurse<MyGrammar>);
+		add("Fm(%s)",          Builtins::MemRecurse<MyGrammar>);
 	}
 } grammar; 
 
@@ -82,7 +83,7 @@ public:
 		// This would be a normal call:
 		const auto out = call(x.input, ""); 
 		const auto outZ = out.Z();
-		
+
 		// Or we can call and get back a list of completed virtual machine states
 		// these store a bit more information, like runtime counts and haven't computed the
 		// marginal probability of strings
@@ -92,7 +93,6 @@ public:
 //			prior += -exp(vi.lp-z)*vi.runtime_counter.total; // compute a "runtime" prior penalty NOTE this is fine since a Bayesable first computes the prior before the likelihood so this will not be overwritten
 //		}
 //		auto out = marginal_vms_output(v); // and convert v to a disribution on strings
-
 
 		const auto log_A = log(alphabet.size());
 		
@@ -124,11 +124,6 @@ public:
 		
 		return std::make_pair(MyHypothesis(std::move(x.first)), x.second); 
 	}	
-
-//	[[nodiscard]] virtual std::pair<MyHypothesis,double> propose() const {
-//		auto g = grammar->generate<S>();
-//		return std::make_pair(MyHypothesis(grammar, g), grammar->log_probability(g) - grammar->log_probability(value));
-//	}	
 	
 	void print(std::string prefix="") override {
 		// we're going to make this print by showing the language we created on the line before
@@ -143,8 +138,6 @@ public:
 double MyHypothesis::regenerate_p = 0.75;
 
 ////////////////////////////////////////////////////////////////////////////////////////////
-// This needs to be included last because it includes VirtualMachine/applyPrimitives.h
-// which really requires Primitives to be defined already
 
 // if we define DO_NOT_INCLUDE_MAIN then we can import everything *except* the below
 #ifndef DO_NOT_INCLUDE_MAIN
@@ -159,6 +152,7 @@ double MyHypothesis::regenerate_p = 0.75;
 
 #include "HillClimbing.h"
 
+
 int main(int argc, char** argv){ 
 	
 	// default include to process a bunch of global variables: mcts_steps, mcc_steps, etc
@@ -166,7 +160,6 @@ int main(int argc, char** argv){
 	fleet.add_option("-a,--alphabet", alphabet, "Alphabet we will use"); 	// add my own args
 	fleet.add_option("-d,--data",     datastr, "Comma separated list of input data strings");	
 	fleet.initialize(argc, argv);
-	
 	
 	//------------------
 	// Add the terminals to the grammar
@@ -226,34 +219,20 @@ int main(int argc, char** argv){
 //	tn.print();
 //
 //	return 0;
-	
-//	top.print_best = true;
-//	auto h0 = MyHypothesis::sample();
-//	HillClimbing samp(h0, &mydata);
-//	for(auto& h : samp.run(Control()) | top | print(FleetArgs::print) ) { UNUSED(h); }
-//	top.print();
 
-//	top.print_best = true;
-//	auto h0 = MyHypothesis::sample();
-//	MCMCChain samp(h0, &mydata);
-//	for(auto& h : samp.run(Control()) | top | thin(FleetArgs::thin)) {
-//		UNUSED(h);
-//	}
-//	top.print();
-
-	// Let's look at the best run
-
-	size_t idx=0;
-	
 	top.print_best = true;
 	auto h0 = MyHypothesis::sample();
-	ParallelTempering samp(h0, &mydata, FleetArgs::nchains, 10.0);
-	for(auto h : samp.run(Control(), 250, 30000) | top | print(FleetArgs::print) | thin(FleetArgs::thin)) {
-		//UNUSED(h);
+	ParallelTempering samp(h0, &mydata, FleetArgs::nchains, 1.20);
+//	ChainPool samp(h0, &mydata, FleetArgs::nchains);
+//	MCMCChain samp(h0, &mydata);
+//	HillClimbing samp(h0, &mydata);
+
+	for(auto h : samp.run(Control()) | top | print(FleetArgs::print) | thin(FleetArgs::thin)) {
+		UNUSED(h);
 	
 //		CERR h.born_chain_idx TAB h.string() ENDL;
 //	
-//		if(idx++ % 10000 == 0) {
+//		if(idx++ % 10000 == 1) {
 //			samp.show_statistics();
 //		}
 

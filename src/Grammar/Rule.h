@@ -34,10 +34,10 @@ public:
 	void*				fptr;
 	Op 					op; // for ops that need names
 	int 				arg=0;
-	
-protected:
 	std::vector<nonterminal_t> child_types; // An array of what I expand to; note that this should be const but isn't to allow list initialization (https://stackoverflow.com/questions/5549524/how-do-i-initialize-a-member-array-with-an-initializer-list)
 
+protected:
+	
 	std::size_t          my_hash; // a hash value for this rule
 	
 public:
@@ -80,7 +80,11 @@ public:
 		return is_a(Op::Recurse) or 
 			   is_a(Op::MemRecurse) or 
 			   is_a(Op::SafeRecurse) or 
-			   is_a(Op::SafeMemRecurse);
+			   is_a(Op::SafeMemRecurse) or 
+			   is_a(Op::LexiconRecurse) or 
+			   is_a(Op::LexiconMemRecurse) or 
+			   is_a(Op::LexiconSafeRecurse) or 
+			   is_a(Op::LexiconSafeMemRecurse);
 	}
 	
 	// Two versions: one for when we have a specified, and one for where we read from arg
@@ -158,11 +162,12 @@ public:
 	}
 	
 	std::string string() const {
-		std::string out = "<" + str(nt) + " -> " + format + " : ";
+		std::string out = "[RULE " + format + " : ";
 		for(size_t i =0;i<N;i++) {
-			out += " " + str(child_types[i]);
+			out += str(child_types[i]) + "x";
 		}
-		out += "\t w/ p \u221D " + str(p) + ">";
+		out = out.erase(out.size()-1); // remove last x
+		out += " -> " + str(nt) + ", p \u221D " + str(p) + "]";
 		return out;
 	}
 	

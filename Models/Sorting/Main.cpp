@@ -73,8 +73,8 @@ public:
 		});
 		
 		add("\u00D8",        +[]()         -> S          { return S(""); });
-		add("(%s==%s)",      +[](S x, S y) -> bool       { return x==y; }, 1./2.);
-		add("(%s==%s)",      +[](char x, char y) -> bool { return x==y; }, 1./2.);
+		add("eq_s(%s,%s)",      +[](S x, S y) -> bool       { return x==y; }, 1./2.);
+		add("eq_c(%s,%s)",      +[](char x, char y) -> bool { return x==y; }, 1./2.);
 		
 		add("and(%s,%s)",    +[](bool a, bool b) -> bool { return (a and b); }, 1./3.);
 		add("or(%s,%s)",     +[](bool a, bool b) -> bool { return (a or b); }, 1./3.);
@@ -108,9 +108,9 @@ public:
 		});
 		
 		add("x",             Builtins::X<MyGrammar>, 10);
-		add("if(%s,%s,%s)",  Builtins::If<MyGrammar,S>, 1./3);
-		add("if(%s,%s,%s)",  Builtins::If<MyGrammar,char>, 1./3);
-		add("if(%s,%s,%s)",  Builtins::If<MyGrammar,int>, 1./3);
+		add("if_s(%s,%s,%s)",  Builtins::If<MyGrammar,S>, 1./3);
+		add("if_c(%s,%s,%s)",  Builtins::If<MyGrammar,char>, 1./3);
+		add("if_i(%s,%s,%s)",  Builtins::If<MyGrammar,int>, 1./3);
 		add("recurse(%s)",   Builtins::Recurse<MyGrammar>);
 	}
 } grammar;
@@ -348,48 +348,48 @@ int main(int argc, char** argv){
 	
 	if(method == "parallel-tempering") {
 		auto h0 = MyHypothesis::sample();
-		ParallelTempering samp(h0, &mydata, FleetArgs::nchains, 10.0);
-		for(auto& h : samp.run(Control(), 250, 10000)) {
+		ParallelTempering samp(h0, &mydata, FleetArgs::nchains, 1.20);
+		for(auto& h : samp.run(Control())) {
 			top << h;
 		}
 	}
 	else if(method == "parallel-tempering-ID") {
 		whichProposal = ProposalType::InsertDelete;
 		auto h0 = MyHypothesis::sample();
-		ParallelTempering samp(h0, &mydata, FleetArgs::nchains, 10.0);
-		for(auto& h : samp.run(Control(), 250, 10000)){
+		ParallelTempering samp(h0, &mydata, FleetArgs::nchains, 1.20);
+		for(auto& h : samp.run(Control())){
 			top << h;
 		}
 	}
 	else if(method == "parallel-tempering-prior-propose") {
 		whichProposal = ProposalType::Prior;
 		auto h0 = MyHypothesis::sample();
-		ParallelTempering samp(h0, &mydata, FleetArgs::nchains, 10.0);
-		for(auto& h : samp.run(Control(), 250, 10000)) {
+		ParallelTempering samp(h0, &mydata, FleetArgs::nchains, 1.20);
+		for(auto& h : samp.run(Control())) {
 			top << h;
 		}
 	}
 	else if(method == "prior-sampling") {
 		PriorInference<MyHypothesis> pri(&grammar, &mydata);
-		for(auto& h : pri.run(Control())) {
+		for(auto& h : pri.run(Control()) | print(FleetArgs::print)) {
 			top << h;
 		}
 	}
 	else if(method == "basic-enumeration") {
 		EnumerationInference<MyHypothesis,MyGrammar,BasicEnumeration<MyGrammar>> e(&grammar, &mydata);
-		for(auto& h : e.run(Control())){
+		for(auto& h : e.run(Control()) | print(FleetArgs::print)){
 			top << h;
 		}
 	}
 	else if(method == "partial-LZ-enumeration") {
 		EnumerationInference<MyHypothesis,MyGrammar,PartialLZEnumeration<MyGrammar>> e(&grammar, &mydata);
-		for(auto& h : e.run(Control())) {
+		for(auto& h : e.run(Control()) | print(FleetArgs::print)) {
 			top << h;
 		}
 	}
 	else if(method == "full-LZ-enumeration") {
 		EnumerationInference<MyHypothesis,MyGrammar,FullLZEnumeration<MyGrammar>> e(&grammar, &mydata);
-		for(auto& h : e.run(Control()) ){
+		for(auto& h : e.run(Control()) | print(FleetArgs::print) ){
 			top << h;
 		}
 	}

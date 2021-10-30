@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <limits.h>
 
 #include "Hypotheses/Interfaces/Bayesable.h"
@@ -16,6 +17,7 @@
  */
 
 template<typename this_t, 
+		 typename key_t,
 		 typename INNER, 
 		 typename _input_t,
 		 typename _output_t, 
@@ -23,9 +25,9 @@ template<typename this_t,
 		 typename _VirtualMachineState_t=typename INNER::Grammar_t::VirtualMachineState_t
 		 >
 class Lexicon : public MCMCable<this_t,datum_t>,
-				public Searchable<this_t, _input_t, _output_t>,
-				public Callable<_input_t, _output_t, _VirtualMachineState_t>,
-				public Serializable<this_t>
+				public Searchable<this_t, _input_t, _output_t>, // TODO: Interface a little broken 
+				public Serializable<this_t>,
+				public ProgramLoader<_VirtualMachineState_t> 
 {
 public:
 	using Grammar_t = typename INNER::Grammar_t;
@@ -36,11 +38,16 @@ public:
 	// Store a lexicon of type INNER elements
 	const static char FactorDelimiter = '|';
 
-	std::vector<INNER> factors;
+	static double p_factor_propose;
+
+	std::map<key_t,INNER> factors;
 	
-	Lexicon(size_t n)  : MCMCable<this_t,datum_t>()  { factors.resize(n); }
-	Lexicon()          : MCMCable<this_t,datum_t>()  { }
+	Lexicon() : MCMCable<this_t,datum_t>()  { }
 	
+	/**
+	 * @brief Return the number of factors
+	 * @return 
+	 */	
 	size_t nfactors() const  {
 		return factors.size();
 	}
@@ -49,11 +56,17 @@ public:
 	      std::vector<INNER>& get_value()       {	return factors;	}
 	const std::vector<INNER>& get_value() const {	return factors;	}
 	
+		  INNER& at(const key_t& k) { return factors.at(k); }
+	const INNER& at(const key_t& k) const { return factors.at(k); }
+	
+		  INNER& operator[](const key_t& k) { return factors[k]; }
+	const INNER& operator[](const key_t& k) const { return factors[k]; }
+	
 	Grammar_t* get_grammar() {
 		// NOTE that since LOTHypothesis has grammar as its type, all INNER Must have the 
 		// same grammar type (But this may change in the future -- if it does, we need to 
 		// update GrammarHypothesis::set_hypotheses_and_data)
-		return factors[0].get_grammar();
+		return factors.begin()->get_grammar();
 	}
 	
 	
@@ -62,11 +75,11 @@ public:
 	 * @param n
 	 * @return 
 	 */	
-	[[nodiscard]] static this_t sample(size_t nf) {
-		this_t out;
+	[[nodiscard]] static this_t sample(std::initializer_list<key_t> lst) {
 		
-		for(size_t i=0;i<nf;i++) {// start with the right number of factors
-			out.factors.push_back(InnerHypothesis::sample());
+		this_t out;
+		for(auto& k : lst){
+			out[k] = INNER::sample();
 		}
 		
 		return out;
@@ -74,19 +87,15 @@ public:
 	
 	virtual std::string string(std::string prefix="") const override {
 		/**
-		 * @brief AConvert a lexicon to a string -- defaultly includes all arguments. 
+		 * @brief Convert a lexicon to a string -- defaultly includes all arguments. 
 		 * @return 
 		 */
 		
 		std::string s = prefix + "[";
-		for(size_t i =0;i<factors.size();i++){
-			s.append(std::string("F"));
-			s.append(std::to_string(i));
-			s.append(":=");
-			s.append(factors[i].string());
-			s.append(".");
-			if(i<factors.size()-1) s.append(" ");
+		for(auto& [k,f] : factors) { 
+			s += "F("+str(k)+",x):=" + f.string() + ". ";
 		}
+		s.erase(s.size()-1); // remove last empty space
 		s.append("]");
 		return s;		
 	}
@@ -100,128 +109,119 @@ public:
 		std::hash<size_t> h;
 		size_t out = h(factors.size());
 		size_t i=0;
-		for(auto& a: factors){
-			hash_combine(out, a.hash(), i);
+		for(auto& [k,f] : factors){
+			hash_combine(out, f.hash(), k);
 			i++;
 		}
 		return out;
 	}
 	
+	/**
+	 * @brief Equality checks equality on each part
+	 * @param l
+	 * @return 
+	 */
 	virtual bool operator==(const this_t& l) const override {
-		/**
-		 * @brief Equality checks equality on each part
-		 * @param l
-		 * @return 
-		 */
-			
-		// first, fewer factors are less
-		if(factors.size() != l.factors.size()) 
-			return  false;
-		
-		for(size_t i=0;i<factors.size();i++) {
-			if(!(factors[i] == l.factors[i]))
-				return false;
-		}
-		return true; 
+		return factors == l.factors;
 	}
 	
-	bool has_valid_indices() const {
-		/**
-		 * @brief A lexicon has valid indices if calls to  op_RECURSE, op_MEM_RECURSE, op_SAFE_RECURSE, and op_SAFE_MEM_RECURSE all have arguments that are less than the size. 
-		 *  	  (So this places no restrictions on the calling earlier factors)
-		 * @return 
-		 */
-		
-		// check to make sure that if we have rn recursive factors, we never try to call F on higher 
-		
-		for(auto& f : factors) {
-			for(const auto& n : f.get_value() ) {
-				if(n.rule->is_recursive()) {
-					int fi = n.rule->arg; // which factor is called?
-					if(fi >= (int)factors.size() or fi < 0)
-						return false;
-				}
-			}
-		}
-		return true;
-	}
+//	/**
+//	 * @brief A lexicon has valid indices if calls to  op_RECURSE, op_MEM_RECURSE, op_SAFE_RECURSE, and op_SAFE_MEM_RECURSE all have arguments that are less than the size. 
+//	 *  	  (So this places no restrictions on the calling earlier factors)
+//	 * @return 
+//	 */
+//	bool has_valid_indices() const {
+//		for(auto& [k, f] : factors) {
+//			for(const auto& n : f.get_value() ) {
+//				if(n.rule->is_recursive()) {
+//					int fi = n.rule->arg; // which factor is called?
+//					if(fi >= (int)factors.size() or fi < 0)
+//						return false;
+//				}
+//			}
+//		}
+//		return true;
+//	}
 	 
-
-	bool check_reachable() const {
-		/**
-		 * @brief Check if the last factor call everything else transitively (e.g. are we "wasting" factors)
-		 * 		  We do this by making a graph of what factors call which others and then computing the transitive closure. 
-		 * @return 
-		 */
-		
-		const size_t N = factors.size();
-		assert(N > 0); 
-		
-		// is calls[i][j] stores whether factor i calls factor j
-		//bool calls[N][N]; 
-		std::vector<std::vector<bool> > calls(N, std::vector<bool>(N, false)); 
-		 
-		// everyone calls themselves, zero the rest
-		for(size_t i=0;i<N;i++) {
-			for(size_t j=0;j<N;j++){
-				calls[i][j] = (i==j);
-			}
-		}
-		
-		for(size_t i=0;i<N;i++){
-			
-			for(const auto& n : factors[i].get_value() ) {
-				if(n.rule->is_recursive()) {
-					calls[i][n.rule->arg] = true;
-				}
-			}
-		}
-		
-		// now we take the transitive closure to see if calls[N-1] calls everything (eventually)
-		// otherwise it has probability of zero
-		// TOOD: This could probably be lazier because we really only need to check reachability
-		for(size_t a=0;a<N;a++) {	
-		for(size_t b=0;b<N;b++) {
-		for(size_t c=0;c<N;c++) {
-			calls[b][c] = calls[b][c] or (calls[b][a] and calls[a][c]);		
-		}
-		}
-		}
-
-		// don't do anything if we have uncalled functions from the root
-		for(size_t i=0;i<N;i++) {
-			if(not calls[N-1][i]) {
-				return false;
-			}
-		}		
-		return true;		
-	}
+//
+//	bool check_reachable() const {
+//		/**
+//		 * @brief Check if the last factor call everything else transitively (e.g. are we "wasting" factors)
+//		 * 		  We do this by making a graph of what factors call which others and then computing the transitive closure. 
+//		 * 		  NOTE that this requires the key_type and assumes that a rule of that type can be gotten directly
+//		 *        from the first child of a recursive call (e.g. a terminal)
+//		 * @return 
+//		 */
+//		
+//		const size_t N = factors.size();
+//		assert(N > 0); 
+//		
+//		// is calls[i][j] stores whether factor i calls factor j
+//		//bool calls[N][N]; 
+//		std::vector<std::vector<bool> > calls(N, std::vector<bool>(N, false)); 
+//		 
+//		// everyone calls themselves, zero the rest
+//		for(size_t i=0;i<N;i++) {
+//			for(size_t j=0;j<N;j++){
+//				calls[i][j] = (i==j);
+//			}
+//		}
+//		
+//		{
+//			int i=0;
+//			for(auto& [k, f] : factors) {
+//				for(const auto& n : f.get_value() ) {					
+//					if(n.rule->is_recursive()) {
+//						
+//						// NOTE This assumes that n.child[0] is directly evaluable. 
+//						const Rule* r = n.child(0).rule;
+//						assert(r->is_terminal()); // or else we can't use this
+//						auto fptr = reinterpret_cast<VirtualMachineState_t::FT*>(r->fptr);						
+//						CERR string() ENDL;
+//						CERR ((*fptr)(nullptr,0)) ENDL;
+//
+//						BLEH this doesn't work well anymore because we have to run the function
+//						
+//						calls[i][n.rule->arg] = true;
+//					}
+//				}
+//				i++;
+//			}
+//		}
+//		
+//		// now we take the transitive closure to see if calls[N-1] calls everything (eventually)
+//		// otherwise it has probability of zero
+//		// TOOD: This could probably be lazier because we really only need to check reachability
+//		for(size_t a=0;a<N;a++) {	
+//		for(size_t b=0;b<N;b++) {
+//		for(size_t c=0;c<N;c++) {
+//			calls[b][c] = calls[b][c] or (calls[b][a] and calls[a][c]);		
+//		}
+//		}
+//		}
+//
+//		// don't do anything if we have uncalled functions from the root
+//		for(size_t i=0;i<N;i++) {
+//			if(not calls[N-1][i]) {
+//				return false;
+//			}
+//		}		
+//		return true;		
+//	}
 
 	
 	/********************************************************
 	 * Required for VMS to dispatch to the right sub
 	 ********************************************************/
 	 
-//	virtual size_t program_size(short s) override {
-//		return factors[s].program_size(0);
-//	}
-	 
-	virtual void push_program(Program& s, short j) override {
-		/**
-		 * @brief Put factor j onto program s
-		 * @param s
-		 * @param j
-		 */
-		
-		assert(factors.size() > 0);
-		
-		 // or else badness -- NOTE: We could take mod or insert op_ERR, or any number of other options. 
-		 // here, we decide just to defer to the subclass of this
-		assert(j < (short)factors.size());
-		assert(j >= 0);
-
+	/**
+	 * @brief Dispatch key k -- push its program onto the stack.
+	 * @param s
+	 * @param k
+	 */	 
+	virtual void push_program(Program<VirtualMachineState_t>& s, const key_t k) override {
 		// dispath to the right factor
-		factors[j].push_program(s); // on a LOTHypothesis, we must call wiht j=0 (j is used in Lexicon to select the right one)
+		factors.at(k).push_program(s); // on a LOTHypothesis, we must call wiht j=0 (j is used in Lexicon to select the right one)
 	}
 	
 	/********************************************************
@@ -229,8 +229,8 @@ public:
 	 ********************************************************/
 	
 	virtual void complete() override {
-		for(auto& v: factors){
-			v.complete();
+		for(auto& [k, f] : factors){
+			f.complete();
 		}
 	}
 		
@@ -239,51 +239,53 @@ public:
 		
 		this->prior = log(0.5)*(factors.size()+1); // +1 to end adding factors, as in a geometric
 		
-		for(auto& a : factors) {
-			this->prior += a.compute_prior();
+		for(auto& [k,f] : factors) {
+			this->prior += f.compute_prior();
 		}
 		
 		return this->prior;
 	}
-	
+
+	/**
+	 * @brief This proposal guarantees that there will be at least one factor that is proposed to. 
+	 *        Each individual factor is proposed to with p_factor_propose
+	 * @return 
+	 */	
 	[[nodiscard]] virtual std::pair<this_t,double> propose() const override {
-		/**
-		 * @brief This proposal guarantees that there will be at least one factor that is proposed to. 
-		 * 		  To do this, we draw random numbers on 2**factors.size()-1 and then use the bits of that
-		 * 		  integer to determine which factors to propose to. 
-		 * @return 
-		 */
+
+		// let's first make a vector to see which factor we propose to.
+		std::vector<bool> should_propose(factors.size(), false);
+		for(size_t i=0;i<factors.size();i++) {
+			should_propose[i] = flip(p_factor_propose);
+		}
+		should_propose[myrandom(should_propose.size())] = true; // always ensure one
 		
-		// cannot be 0, since that is not proposing to anything
-		std::uniform_int_distribution<size_t> d(1, pow(2,factors.size())-1 );
-		size_t u = d(rng);
-		
-		// now copy over
-		// TODO: Check that detailed balance is ok?
+		// now go through and propose to those factors
+		// (NOTE fb is always zero)
+		// NOTE: This is not great because it doesn't copy like we might want...
 		this_t x; double fb = 0.0;
-		x.factors.reserve(factors.size());
-		for(size_t k=0;k<factors.size();k++) {
-			if(u & 0x1) {
-				auto [h, _fb] = factors[k].propose();
-				x.factors.push_back(h);
+		int idx = 0;
+		for(auto& [k,f] : factors) {
+			if(should_propose[idx]) {
+				auto [h, _fb] = f.propose();
+				x.factors[k] = h;
 				fb += _fb;
 			} else {
-				auto h = factors[k];
-				x.factors.push_back(h);
+				x.factors[k] = f;
 			}
-			u = u>>1;
+			idx++;
 		}
-
 		assert(x.factors.size() == factors.size());
+		
 		return std::make_pair(x, fb);									
 	}
+
 	
 	
 	[[nodiscard]] virtual this_t restart() const override {
 		this_t x;
-		x.factors.resize(factors.size());
-		for(size_t i=0;i<factors.size();i++){
-			x.factors[i] = factors[i].restart();
+		for(auto& [k,f] : factors) {
+			x.factors[k] = f.restart();
 		}
 		return x;
 	}
@@ -294,9 +296,8 @@ public:
 		return h.restart();
 	}
 	
-	
 	/********************************************************
-	 * Implementation of Searchabel interace 
+	 * Implementation of Searchable interace 
 	 ********************************************************/
 	 // Main complication is that we need to manage nullptrs/empty in order to start, so we piggyback
 	 // on LOTHypothesis. To od this, we assume we can construct T with T tmp(grammar, nullptr) and 
@@ -312,36 +313,26 @@ public:
 		}
 		else {
 			// we should have everything complete except the last
-			size_t s = factors.size();
-			return factors[s-1].neighbors();
+			return factors.rbegin()->second.neighbors();
 		}
 	 }
 		 
 	 void expand_to_neighbor(int k) override {
-		 // try adding a factor
-		 if(is_evaluable()){ 
-			INNER tmp; // as above, assumes that this constructs will null
-			assert(k < tmp.neighbors());			
-			factors.push_back( tmp.make_neighbor(k) );	 
-		}
-		else {
-			// expand the last factor
-			size_t s = factors.size();
-			assert(k < factors[s-1].neighbors());
-			factors[s-1].expand_to_neighbor(k);
-		}
-	 }
+		 // This is currently a bit broken -- it used to know when to add a factor
+		 // but now we can't add a factor without knowing the key, so for now
+		 // this is just assert(false);
+		 throw NotImplementedError();
+	}
 	
 	
 	 virtual double neighbor_prior(int k) override {
-		size_t s = factors.size();
-		assert(k < factors[s-1].neighbors());
-		return factors[s-1].neighbor_prior(k);
+		assert(k <  factors.rbegin()->second.neighbors());
+		return factors.rbegin()->second.neighbor_prior(k);
 	 }
 	 
 	 bool is_evaluable() const override {
-		for(auto& a: factors) {
-			if(!a.is_evaluable()) return false;
+		for(auto& [k,f]: factors) {
+			if(not f.is_evaluable()) return false;
 		}
 		return true;
 	 }
@@ -350,12 +341,9 @@ public:
 	/********************************************************
 	 * How to call 
 	 ********************************************************/
-	virtual DiscreteDistribution<output_t> call(const input_t x, const output_t& err=output_t{}, ProgramLoader* loader=nullptr) override {
-		// subclass must define what it means to call a lexicon
+	virtual DiscreteDistribution<output_t> call(const key_t k, const input_t x, const output_t& err=output_t{}) {
 		throw NotImplementedError();
 	}
-	 
-	 
 	 
 	virtual std::string serialize() const override {
 		/**
@@ -363,12 +351,14 @@ public:
 		 * @return 
 		 */
 		
-		std::string out = "";
-		for(size_t i=0;i<factors.size();i++) {
-			out += factors[i].serialize();
-			if(i < factors.size()-1) 
-				out += Lexicon::FactorDelimiter;
+		std::string out = str(this->prior)      + Lexicon::FactorDelimiter + 
+						  str(this->likelihood) + Lexicon::FactorDelimiter +
+						  str(this->posterior)  + Lexicon::FactorDelimiter;
+		for(auto& [k,f] : factors) {
+			out += str(k)        + Lexicon::FactorDelimiter + 
+				   f.serialize() + Lexicon::FactorDelimiter;
 		}
+		out.erase(out.size()-1); // remove last delmiter
 		return out;
 	}
 	
@@ -381,10 +371,28 @@ public:
 		 */
 
 		this_t h;
-		for(auto f : split(s, Lexicon::FactorDelimiter)) {
-			h.factors.push_back(INNER::deserialize(f));
+		auto q = split(s, Lexicon::FactorDelimiter);
+		
+		h.prior      = string_to<double>(q.front()); q.pop_front();
+		h.likelihood = string_to<double>(q.front()); q.pop_front();
+		h.posterior  = string_to<double>(q.front()); q.pop_front();
+
+		while(not q.empty()){
+			key_t k = string_to<key_t>(q.front());  q.pop_front();
+			auto v = INNER::deserialize(q.front()); q.pop_front();
+			h.factors[k] = v; 
 		}
 		return h;
 	}
 };
 
+
+template<typename this_t, 
+		 typename key_t,
+		 typename INNER, 
+		 typename _input_t,
+		 typename _output_t, 
+		 typename datum_t,
+		 typename _VirtualMachineState_t
+		 >
+double Lexicon<this_t,key_t,INNER,_input_t,_output_t,datum_t,_VirtualMachineState_t>::p_factor_propose = 0.5;

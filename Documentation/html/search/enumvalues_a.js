@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['op_5ferr_5fabort_1507',['OP_ERR_ABORT',['../_v_m_status_8h.html#a6202215407ab29590bb936ca2996cf64acb15e3bbc847e78a1b1352165d03f157',1,'VMStatus.h']]],
-  ['or_1508',['Or',['../_ops_8h.html#a588e6b56097e045c733b60d25c4d45aba3a2d5fe857d8f9541136a124c2edec6c',1,'Ops.h']]]
+  ['mem_1576',['Mem',['../_ops_8h.html#a588e6b56097e045c733b60d25c4d45abadba5553473d129a7985fb532dc249ff4',1,'Ops.h']]],
+  ['memrecurse_1577',['MemRecurse',['../_ops_8h.html#a588e6b56097e045c733b60d25c4d45abac06233e1bc52cb704757c997c86d7c68',1,'Ops.h']]]
 ];

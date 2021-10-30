@@ -71,6 +71,9 @@ void checkLOTHypothesis(const Grammar_t* g, const Hypothesis_t h){
 	}
 	assert(newH.hash() == h.hash());	
 	
+	// check that the loader is ok
+	assert(h.program.loader == &h);
+	
 	// check serialization
 	std::string s = h.serialize();
 	assert(Hypothesis_t::deserialize(s) == h);
@@ -205,6 +208,17 @@ int main(int argc, char** argv){
 	// Actually run
 	//------------------
 	
+	
+	COUT "# Parsing...";
+	for(size_t i=0;i<1000;i++) {
+		auto n = grammar.generate();
+		auto n2 = grammar.simple_parse(n.string());
+		assert(n == n2);		
+		assert(n.string() == n2.string());		
+	}
+	COUT "GOOD" ENDL;
+	
+	
 	COUT "# MCMC...";
 	TopN<MyHypothesis> top_mcmc(N);  //	top_mcmc.print_best = true;
 	h0 = MyHypothesis::sample();
@@ -233,7 +247,7 @@ int main(int argc, char** argv){
 	TopN<MyHypothesis> top_tempering(N);
 	h0 = MyHypothesis::sample();
 	ParallelTempering samp(h0, &mydata, 8, 1000.0);
-	for(auto& h : samp.run(Control(), 500, 1000)) { 
+	for(auto& h : samp.run(Control())) { 
 		top_tempering << h; 
 	}
 	// we run here with fast swaps, adaptation to fit more in 

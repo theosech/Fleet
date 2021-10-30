@@ -19,7 +19,7 @@ using StrSet = std::set<S>;
 
 const std::string my_default_input = "data/English"; 
 S alphabet="nvadtp";
-size_t max_length = 64; // was 256 // max string length, else throw an error (more than 256 needed for count, a^2^n, a^n^2, etc
+size_t max_length = 128; // (more than 256 needed for count, a^2^n, a^n^2, etc -- see command line arg)
 size_t max_setsize = 64; // throw error if we have more than this
 size_t nfactors = 2; // how may factors do we run on? (defaultly)
 
@@ -29,9 +29,8 @@ size_t PREC_REC_N   = 25;  // if we make this too high, then the data is finite 
 const size_t MAX_LINES    = 1000000; // how many lines of data do we load? The more data, the slower...
 const size_t MAX_PR_LINES = 1000000; 
 
-const size_t NTEMPS = 15; 
-const size_t MAX_TEMP = 25.0; 
-unsigned long SWAP_EVERY = 150; // ms
+const size_t NTEMPS = 5; 
+const size_t MAX_TEMP = 2.0; 
 unsigned long PRINT_STRINGS; // print at most this many strings for each hypothesis
 
 std::vector<S> data_amounts={"1", "2", "5", "10", "20", "50", "100", "200", "500", "1000", "2000", "5000", "10000", "50000", "100000"}; // how many data points do we run on?
@@ -47,7 +46,7 @@ size_t current_ntokens = 0; // how many tokens are there currently? Just useful 
 #include "Grammar.h"
 #include "Singleton.h"
 
-class MyGrammar : public Grammar<S,S,     S,char,bool,double,StrSet>,
+class MyGrammar : public Grammar<S,S,     S,char,bool,double,StrSet,int>,
 				  public Singleton<MyGrammar> {
 public:
 	MyGrammar() {
@@ -186,6 +185,11 @@ public:
 				add_terminal( s, double(a)/pdenom, 1.0);
 			}
 		}
+		
+		add("F%s(%s)" ,  Builtins::LexiconRecurse<MyGrammar,int>, 1./4.);
+		add("Fm%s(%s)",  Builtins::LexiconMemRecurse<MyGrammar,int>, 1./4.);
+//		add("Fs%s(%s)",  Builtins::LexiconSafeRecurse<MyGrammar,int>, 1./4.);
+//		add("Fsm%s(%s)", Builtins::LexiconSafeMemRecurse<MyGrammar,int>, 1./4.);
 	}
 } grammar;
 
@@ -219,34 +223,21 @@ public:
 
 #include "Lexicon.h"
 
-class MyHypothesis final : public Lexicon<MyHypothesis, InnerHypothesis, S, S> {
+class MyHypothesis final : public Lexicon<MyHypothesis, int,InnerHypothesis, S, S> {
 public:	
 	
-	using Super = Lexicon<MyHypothesis, InnerHypothesis, S, S>;
+	using Super = Lexicon<MyHypothesis, int,InnerHypothesis, S, S>;
 	using Super::Super;
 
-	virtual double compute_prior() override {
-		// since we aren't searching over nodes, we are going to enforce a prior that requires
-		// each function to be called -- this should make the search a bit more efficient by 
-		// allowing us to prune out the functions which could be found with a smaller number of factors
-		return prior = (check_reachable() ? Lexicon<MyHypothesis,InnerHypothesis,S,S>::compute_prior() : -infinity);
-	}
-	
-
-	/********************************************************
-	 * Calling
-	 ********************************************************/
-	 
-	virtual DiscreteDistribution<S> call(const S x, const S& err=S{}, ProgramLoader* loader=nullptr) override {
+	virtual DiscreteDistribution<S> call(const S x, const S& err=S{}) {
 		// this calls by calling only the last factor, which, according to our prior,
 		
-		assert(loader==nullptr); // we really don't want people passing this in to this lexicon
-		
-//		assert(has_valid_indices()); // can either assert or return error
-		if(not has_valid_indices()) return {}; 
-		
-		size_t i = factors.size()-1; 
-		return factors[i].call(x, err, this); // we call the factor but with this as the loader.  
+		// make myself the loader for all factors
+		for(auto& [k,f] : factors) f.program.loader = this; 
+
+		extern size_t nfactors;
+		assert(nfactors == factors.size());
+		return factors[nfactors-1].call(x, err); // we call the factor but with this as the loader.  
 	}
 	 
 	 // We assume input,output with reliability as the number of counts that input was seen going to that output
@@ -302,6 +293,7 @@ std::string prdata_path = "";
 MyHypothesis::data_t prdata; // used for computing precision and recall -- in case we want to use more strings?
 S current_data = "";
 bool long_output = false; // if true, we allow extra strings, recursions etc. on output
+bool long_strings = false; 
 std::pair<double,double> mem_pr; 
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -335,22 +327,14 @@ int main(int argc, char** argv){
 	
 	COUT "# Using alphabet=" << alphabet ENDL;
 
+
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	// Set up the grammar using command line arguments
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	
-	for(size_t a=0;a<nfactors;a++) {	
-		// here we pass in a as a index into these recursive arguments since it
-		// gets passed to the program loader
-		
-		auto s = std::to_string(a);
-		double p = 1.0/(4*nfactors); // NOTE: Slightly different prior
-
-		grammar.add(S("F")+s+"(%s)" ,  Builtins::Recurse<MyGrammar>, p, a);
-		grammar.add(S("Fm")+s+"(%s)",  Builtins::MemRecurse<MyGrammar>, p, a);
-
-		grammar.add(S("Fs")+s+"(%s)",  Builtins::SafeRecurse<MyGrammar>, p, a);
-		grammar.add(S("Fms")+s+"(%s)", Builtins::SafeMemRecurse<MyGrammar>, p, a);
+	// each of the recursive calls we are allowed
+	for(size_t i=0;i<nfactors;i++) {	
+		grammar.add_terminal( str(i), (int)i, 1.0/nfactors);
 	}
 		
 	for(const char c : alphabet) {
@@ -390,13 +374,22 @@ int main(int argc, char** argv){
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 		
 	// Build up an initial hypothesis with the right number of factors
-	auto h0 = MyHypothesis::sample(nfactors); 
+	MyHypothesis h0;
+	for(size_t i=0;i<nfactors;i++) { h0[i] = InnerHypothesis::sample(); }
+ 
 	
 	TopN<MyHypothesis> all; 
 	//	all.set_print_best(true);
 	
-	ParallelTempering samp(h0, &datas[0], NTEMPS, MAX_TEMP); 
-		
+	ParallelTempering samp(h0, &datas[0], FleetArgs::nchains, MAX_TEMP); 
+//	ChainPool samp(h0, &datas[0], NTEMPS); 
+
+	// Set these up as the defaults as below
+	VirtualMachineControl::MAX_STEPS  = 1024; 
+	VirtualMachineControl::MAX_OUTPUTS = 256; 
+	VirtualMachineControl::MIN_LP = -15;
+	PRINT_STRINGS = 512;	
+	
 	tic();	
 	for(size_t di=0;di<datas.size() and !CTRL_C;di++) {
 		auto& this_data = datas[di];
@@ -420,9 +413,10 @@ int main(int argc, char** argv){
 		// set this global variable so we know
 		current_ntokens = 0;
 		for(auto& d : this_data) { UNUSED(d); current_ntokens++; }
-		
-		for(auto& h : samp.run(Control(FleetArgs::steps/datas.size(), FleetArgs::runtime/datas.size(), FleetArgs::nthreads, FleetArgs::restart), SWAP_EVERY, 60*1000)) {
-			all << h;
+				
+		for(auto& h : samp.run(Control(FleetArgs::steps/datas.size(), FleetArgs::runtime/datas.size(), FleetArgs::nthreads, FleetArgs::restart))
+						| print(FleetArgs::print) | all) {
+			UNUSED(h);
 		}	
 
 		// set up to print using a larger set if we were given this option
@@ -431,25 +425,16 @@ int main(int argc, char** argv){
 			VirtualMachineControl::MAX_OUTPUTS = 16000;
 			VirtualMachineControl::MIN_LP = -40;
 			PRINT_STRINGS = 5000;
-			max_length = 350; 			
 		}
-		else {
-			VirtualMachineControl::MAX_STEPS  = 4096; 
-			VirtualMachineControl::MAX_OUTPUTS = 1024; 
-			VirtualMachineControl::MIN_LP = -15;
-			PRINT_STRINGS = 512;
-			max_length = 64; 	
-		}
-		
+
 		all.print(data_amounts[di]);
 		
 		// restore
 		if(long_output) {
-			VirtualMachineControl::MAX_STEPS  = 4096; 
-			VirtualMachineControl::MAX_OUTPUTS = 1024; 
+			VirtualMachineControl::MAX_STEPS  = 1024; 
+			VirtualMachineControl::MAX_OUTPUTS = 256; 
 			VirtualMachineControl::MIN_LP = -15;
 			PRINT_STRINGS = 512;
-			max_length = 64; 	
 		}	
 		
 		if(di+1 < datas.size()) {

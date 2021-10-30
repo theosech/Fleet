@@ -1,6 +1,8 @@
 var searchData=
 [
-  ['grammar_743',['Grammar',['../class_grammar.html',1,'']]],
-  ['grammar_3c_20cl_5fvoid_2c_20cl_2c_20cl_2c_20cl_5fvoid_20_3e_744',['Grammar&lt; cl_void, CL, CL, cl_void &gt;',['../class_grammar.html',1,'']]],
-  ['grammarhypothesis_745',['GrammarHypothesis',['../class_grammar_hypothesis.html',1,'']]]
+  ['finitehistory_774',['FiniteHistory',['../class_finite_history.html',1,'']]],
+  ['finitehistory_3c_20bool_20_3e_775',['FiniteHistory&lt; bool &gt;',['../class_finite_history.html',1,'']]],
+  ['floating_5fpoint_5fcompare_776',['floating_point_compare',['../structfloating__point__compare.html',1,'']]],
+  ['fulllzenumeration_777',['FullLZEnumeration',['../class_full_l_z_enumeration.html',1,'']]],
+  ['fullmctsnode_778',['FullMCTSNode',['../class_full_m_c_t_s_node.html',1,'']]]
 ];

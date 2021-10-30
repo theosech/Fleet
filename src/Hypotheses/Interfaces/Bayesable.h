@@ -1,12 +1,15 @@
 #pragma once 
 
 #include <iomanip>
+#include <signal.h>
 
 #include "Errors.h"
 #include "Datum.h"
 #include "IO.h"
 #include "Statistics/FleetStatistics.h"
 #include "Miscellaneous.h"
+
+extern volatile sig_atomic_t CTRL_C;
 
 /**
  * @class Bayesable
@@ -100,7 +103,10 @@ public:
 					break;
 				}
 				
+				// add a break here 
+				if(CTRL_C) break; 
 			}
+			
 			return likelihood;		
 		}
 		else {
