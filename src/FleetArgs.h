@@ -39,4 +39,7 @@ namespace FleetArgs {
 	std::string   output_path  = "output";
 
 	int propsim_ll = 0;
+        int filter_prop = 0;
+        int sample_single_prop = 0;
+        int only_all_true = 1;
 }

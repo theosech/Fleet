@@ -436,7 +436,11 @@ public:
 		app.add_option("--inner-time",  FleetArgs::inner_timestring, "Inner time");
 		app.add_option("--tree",        FleetArgs::tree_path, "Write the tree here");
 
-		app.add_option("--propsim_ll", FleetArgs::propsim_ll, "Use propsim score as the program likelihood");
+		app.add_option("--propsim-ll", FleetArgs::propsim_ll, "Use propsim score as the program likelihood");
+                app.add_option("--filter-prop", FleetArgs::filter_prop, "Whether to filter properties, keeping only the best one");
+                app.add_option("--sample-single-prop", FleetArgs::sample_single_prop, "Whether to use a single sampled (according to it's score) property for likelihood each time");
+                app.add_option("--only-all-true", FleetArgs::only_all_true, "Whether to filter properties, keeping only the allTrue ones for the spec");
+
 		
 //		app.add_flag(  "-q,--quiet",    quiet, "Don't print very much and do so on one line");
 //		app.add_flag(  "-C,--checkpoint",   checkpoint, "Checkpoint every this many steps");

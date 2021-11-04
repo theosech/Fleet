@@ -6,7 +6,7 @@ f=c001_2.txt
 ############ Baseline ###############
 
 # Run baseline on all 100 tasks
-ls $d/*.txt | xargs -n 1 -x  basename | xargs -n 1 -I {} -P 40 sh -c "./main --propsim_ll 0 --largeAlphabet=1 --chains=5 --threads=1 --time=10s --input=$d/{} --output=results/out-small-baseline/{} 2>&1 | tee -a results/out-small-baseline/{}.log"
+# ls $d/*.txt | xargs -n 1 -x  basename | xargs -n 1 -I {} -P 40 sh -c "./main --propsim_ll 0 --largeAlphabet=1 --chains=5 --threads=1 --time=10m --input=$d/{} --output=results/out-small-baseline/{} 2>&1 | tee -a results/out-small-baseline/{}.log"
 # ls $d/*.txt | xargs -n 1 -x  basename | xargs -n 1 -I {} -P 0 ./main --propsim_ll 1 --largeAlphabet=1 --chains=5 --threads=1 --time=1m --input=$d/{} --output=out-small-prop/{} > out-small-prop/{}.log
 
 # Run baseline failed tasks
@@ -17,7 +17,7 @@ ls $d/*.txt | xargs -n 1 -x  basename | xargs -n 1 -I {} -P 40 sh -c "./main --p
 
 
 # Run propsim on all 100 tasks
-# ls $d/*.txt | xargs -n 1 -x  basename | xargs -n 1 -I {} -P 40 sh -c "./main --propsim_ll 1 --largeAlphabet=1 --chains=5 --threads=1 --time=10m --input=$d/{} --output=out-small-prop/{} 2>&1 | tee -a out-small-prop/{}.log"
+ls $d/*.txt | xargs -n 1 -x  basename | xargs -n 1 -I {} -P 40 sh -c "./main --propsim_ll 1 --largeAlphabet=1 --chains=5 --threads=1 --time=10m --input=$d/{} --output=results/out-small-prop-all/{} 2>&1 | tee -a results/out-small-prop-all/{}.log"
 
 
 

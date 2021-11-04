@@ -161,7 +161,7 @@ public:
 				}
 			;}}
 		);
-                /*
+                
                 for (int k=2; k < 10; k++) {
                         properties.push_back(
                                 {"all_output_els_mod_" + str(k) + "_equals_0", [k](const S& i, const S& o) -> bool {
@@ -231,12 +231,28 @@ public:
 					);
 			}
 		}
-                */
 	}
         void set_property_priors(std::vector<std::vector<defaultdatum_t<S, S> >> const &training_data) {
             for (auto &p : properties) {
                 p.set_prior(training_data);
             }
+        }
+
+        void keep_all_true_properties(std::vector<defaultdatum_t<S, S> > const& data) {
+            std::vector<property_t> filtered_properties;
+            for (const auto& p : properties) {
+                int num_true = 0;
+                for (const auto& d : data) {
+                    const bool prop_value = p.apply(d.input, d.output);
+                    num_true = num_true + prop_value;
+                }
+                const PropertyValue prop_value = _get_property_value(num_true, data.size());
+                if (prop_value == PropertyValue::allTrue) {
+                    filtered_properties.push_back(p);
+                }
+            }
+            properties = filtered_properties;
+            return; 
         }
 
         void keep_top_n_properties(std::vector<defaultdatum_t<S, S> > const& data) {
@@ -296,6 +312,7 @@ S restring(const S& s) {
 
 #include "LOTHypothesis.h"
 #include "Timing.h"
+#include "Random.h"
 #include "Strings.h"
 
 
@@ -341,32 +358,50 @@ public:
 		// this version goes through and computes likelihood for data based on 
 
 		// use the property similarity score (between the i/o examples and the candidate program) as the likelihood
-		if (FleetArgs::propsim_ll) {
+		int propsim_ll = FleetArgs::propsim_ll;
+                
+                // COUT "born_chain_idx in compute_likelihood: " << born_chain_idx ENDL;
+                if (FleetArgs::propsim_ll == 4) {
+                    propsim_ll = (born_chain_idx % 2 == 1) ? 0 : 1;
+                } else if (FleetArgs::propsim_ll == 5) {
+                    propsim_ll = (born_chain_idx % 2 == 1) ? 5 : 2;
+                }
+                // COUT "propsim_ll: " << propsim_ll ENDL;
+
+		if (propsim_ll > 0) {
 			if constexpr (is_iterable_v<data_t>) { 
 				double all_same_count = 0;
+                                double best_score = 1.0;
                                 double score = 1.0;
 				// TODO (theosech): figure out why we need this
                                 double likelihood = 0.0;
 				bool already_computed_likelihood = false;
+                                   
+                                std::vector<MyGrammar::property_t> properties;
+                                if (FleetArgs::sample_single_prop) {
+                                    auto p = ::sample<MyGrammar::property_t, std::vector<MyGrammar::property_t>>(grammar.properties, [](const MyGrammar::property_t &p) -> const double {return (1.0 / p.all_true_prior);}).first;
+                                    properties.push_back(*p);
+                                    // COUT "sampled_property: " << p->name << " ()" << p->all_true_prior ENDL;
+                                } else {
+                                    properties = grammar.properties;
+                                }
 
-				for (const MyGrammar::property_t &p : grammar.properties) {
-					// COUT "entered for properties for loop" ENDL;
+				for (const MyGrammar::property_t &p : properties) {
+					// COUT "entered for properties for loop, property: " << p.name ENDL;
 					int num_properties_true = 0;
 					int num_properties_true_spec = 0;
 
 					for (const auto& d : data) {
 						// property value for candidate program
 						auto output = callOne(d.input, "<err>");
-						// COUT "input: " << restring(d.input) ENDL;
-						// COUT "expected: " << restring(d.output) ENDL;
-						// COUT "got: " << restring(output) ENDL;
-						const bool property_value_ex = p.apply(d.input, output);
+                                                const bool property_value_ex = p.apply(d.input, output);
 						num_properties_true = num_properties_true + property_value_ex;
 
-						// property value for i/o pspec
-						bool property_value_ex_spec = p.apply(d.input, d.output);
-						// bool property_value_ex_spec = false;
-						num_properties_true_spec = num_properties_true_spec + property_value_ex_spec;
+                                                if (!FleetArgs::only_all_true) {
+						    // property value for i/o pspec
+						    bool property_value_ex_spec = p.apply(d.input, d.output);
+						    num_properties_true_spec = num_properties_true_spec + property_value_ex_spec;
+                                                }
 
 						// calculate standard approximate likelihood
 						if (!already_computed_likelihood) {
@@ -376,17 +411,35 @@ public:
 					already_computed_likelihood = true;
 
 					PropertyValue prop_value = _get_property_value(num_properties_true, data.size());
-					PropertyValue prop_value_spec = _get_property_value(num_properties_true_spec, data.size());
-                                        if (prop_value == prop_value_spec && prop_value == PropertyValue::allTrue) {
-                                            score = score * p.get_joint_prior(prop_value, prop_value_spec);
+					PropertyValue prop_value_spec = FleetArgs::only_all_true ? PropertyValue::allTrue : _get_property_value(num_properties_true_spec, data.size());
+
+                                        if (prop_value_spec == PropertyValue::allTrue) {
+                                            best_score = best_score * p.all_true_prior;
+                                            if (prop_value == prop_value_spec) {
+                                                score = score * p.all_true_prior;
+                                                all_same_count += 1;
+                                            }
                                         }
 				}
+                                double to_return;
                                 if (likelihood == 0.0) {
-                                    return 0.0;
+                                    to_return = 10000.0;
                                 } else {
-                                    score = log(1.0 - score + 0.0001) + likelihood;
-			            return score;
+                                    // in the range of [1, (1 / prior of all allTrue properties)]
+                                    double propsim_nll = score / best_score;
+
+                                    if (propsim_ll == 1) {
+                                        to_return = propsim_nll * (-1.0);
+                                    } else if (propsim_ll == 2) {
+                                        to_return = likelihood * propsim_nll;
+                                    } else if (propsim_ll == 3) {
+                                        to_return = ((-1.0) * propsim_nll) + likelihood;
+                                    } else if (propsim_ll == 5) {
+                                        to_return = (1.0 / best_score) * likelihood;
+                                    }
                                 }
+                                // COUT "likelihood: " << to_return << " propsim_ll: " << propsim_ll ENDL;
+                                return to_return;
 
 			} else {
 				// should never execute this because it must be defined
@@ -505,9 +558,19 @@ int main(int argc, char** argv) {
             MyHypothesis::data_t task_data = read_task_file(entry.path().string());
             tasks.push_back(task_data);
         }
-        grammar.set_property_priors(tasks);                   
-	grammar.keep_top_n_properties(mydata);
+        grammar.set_property_priors(tasks);
+        
+        if (FleetArgs::only_all_true) {
+            grammar.keep_all_true_properties(mydata);
+        }
 
+        if (FleetArgs::filter_prop) { 
+	    grammar.keep_top_n_properties(mydata);
+        }
+
+        for (const auto& p : grammar.properties) {
+            COUT p.name << ": " << p.all_true_prior ENDL;
+        }
         COUT "number of properties: " << grammar.properties.size() ENDL;
 
 	//------------------

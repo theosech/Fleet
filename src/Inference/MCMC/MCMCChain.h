@@ -119,16 +119,20 @@ public:
 	 * 		  NOTE: ctl cannot be passed by reference. 
 	 * @param ctl
 	 */	
-	 generator<HYP&> run(Control ctl) {
+	 generator<HYP&> run(Control ctl, const int idx) {
 
 		assert(ctl.nthreads == 1 && "*** You seem to have called MCMCChain with nthreads>1. This is not how you parallel. Check out ChainPool"); 
-		
+                
 		#ifdef DEBUG_MCMC
 			DEBUG("# Starting MCMC Chain on\t", current.posterior, current.prior, current.likelihood, current.string());
 		#endif 
 		
 		// I may have copied its start time from somewhere else, so change that here
-		ctl.start();		
+		ctl.start();
+                
+                current.born_chain_idx = idx;
+                // COUT "current.born_chain_idx (ChainPool::run): " << current.born_chain_idx ENDL;
+		
 		do {
 			
 			if(current.posterior > maxval) { // if we improve, store it
@@ -146,6 +150,8 @@ public:
 				std::lock_guard guard(current_mutex);
 				
 				current = current.restart();
+                                current.born_chain_idx = idx;
+                                // COUT "current.born_chain_idx (ChainPool::run, 2): " << current.born_chain_idx ENDL;
 				current.compute_posterior(*data);
 				
 				steps_since_improvement = 0; // reset the couter
@@ -169,6 +175,9 @@ public:
 				
 				// A lot of proposals end up with the same function, so if so, save time by not
 				// computing the posterior
+				//
+				proposal.born_chain_idx = idx;
+                                // COUT "proposal.born_chain_idx (ChainPool::run): " << proposal.born_chain_idx ENDL;
 				if(proposal == current) {
 					// copy all the properties
 					// NOTE: This is necessary because == might just check value, but operator= will copy everything else

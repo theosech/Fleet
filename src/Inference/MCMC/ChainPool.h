@@ -72,6 +72,8 @@ public:
 	generator<HYP&> run_thread(Control& ctl) override {
 		assert(pool.size() > 0 && "*** Cannot run on an empty ChainPool");
 		assert(this->nthreads() <= pool.size() && "*** Cannot have more threads than pool items");
+
+                // COUT "entered run_thread" ENDL;
 		
 		// We have to manage subthreads pretty differently depending on whether we have a time or a 
 		// sample constraint. For now, we assume we can't have both
@@ -94,9 +96,9 @@ public:
 					} while( running[idx] != RunningState::READY ); // so we exit on a false running idx
 					running[idx] = RunningState::RUNNING; // say I'm running this one 
 				}
-				
+	                        // COUT "running chain: " << idx ENDL;			
 				// Actually run and yield, being sure to save where everything came from 
-				for(auto& x : pool[idx].run(Control(steps_before_change, 0, 1))) {
+				for(auto& x : pool[idx].run(Control(steps_before_change, 0, 1), idx)) {
 					x.born_chain_idx = idx; // set this
 					co_yield x;
 				}
@@ -148,8 +150,9 @@ public:
 				}
 				
 			
-				// Actually run and yield, being sure to save where everything came from 
-				for(auto& x : pool[idx].run(Control(to_run_steps, 0, 1))) {
+				// Actually run and yield, being sure to save where everything came from
+				// COUT "running chain: " << idx ENDL;
+				for(auto& x : pool[idx].run(Control(to_run_steps, 0, 1), idx)) {
 					x.born_chain_idx = idx; // set this
 					co_yield x;
 				}
