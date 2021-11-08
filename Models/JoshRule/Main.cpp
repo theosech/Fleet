@@ -454,8 +454,23 @@ size_t trial;
 
 namespace fs = std::filesystem;
 
+///~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// Define classes for MCTS
+///~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+#include "FullMCTSNode.h"
+#include "PartialMCTSNode.h"
+#include "MinimalMCTSNode.h"
+#include "MCMCChain.h"
 
+class PriorSampleMCTS : public PartialMCTSNode<PriorSampleMCTS, MyHypothesis> {
+    public:
+	using Super = PartialMCTSNode<PriorSampleMCTS, MyHypothesis>;
+	using Super::Super;
+
+	// we must declare this to use these in a vector, but we can't call it since we can't move the locks
+	PriorSampleMCTS(PriorSampleMCTS&& m){ throw YouShouldNotBeHereError("*** This must be defined for but should never be called"); } 
+};
 
 #ifndef DO_NOT_INCLUDE_MAIN
 
@@ -506,7 +521,7 @@ int main(int argc, char** argv) {
             tasks.push_back(task_data);
         }
         grammar.set_property_priors(tasks);                   
-	grammar.keep_top_n_properties(mydata);
+	// grammar.keep_top_n_properties(mydata);
 
         COUT "number of properties: " << grammar.properties.size() ENDL;
 
@@ -546,12 +561,14 @@ int main(int argc, char** argv) {
 			else            h0 = top.best();
 			
 			// Run parallel tempering
-			ParallelTempering samp(h0, &training_set, FleetArgs::nchains, 1.0+trial); // adjust temperature by number of data points
+			PriorSampleMCTS m(h0, FleetArgs::explore, &training_set);
+			// ParallelTempering samp(h0, &training_set, FleetArgs::nchains, 1.0+trial); // adjust temperature by number of data points
 			// MCMCChain samp(h0, &training_set);
 			// samp.temperature = 1000.0;
 			
 			auto tempControl = Control();
-			for(auto& h : samp.run(tempControl)) {
+			// for(auto& h : samp.run(tempControl)) {
+		        for(auto& h : m.run(Control(), h0)) {
 				// COUT "Number of properties for h: " << h.properties.size() ENDL;
 				// these only get set on callback
 				h.born_time = time_since(START_TIME);
@@ -573,6 +590,9 @@ int main(int argc, char** argv) {
 				// 	break;
 				// }
 			}
+                        m.print(h0);
+                        m.print(h0, "tree.txt");
+                        COUT "# MCTS size: " TAB m.count() ENDL;
 			
 			CERR "# Done sampling " TAB trial TAB "run" TAB run ENDL;
 			// CERR "# Acceptance rate " TAB double(samp.acceptances) / double(samp.proposals) ENDL;
